@@ -40,8 +40,9 @@ original seal, requires the run folder absent, and deletes the receipt after
 successful validation. Failed reports retain the receipt for correction/retry.
 Cleanup with the same run id can discard that pending receipt if the report is
 abandoned after its run folder is gone.
-An empty shared receipts folder may remain, but no per-run receipt remains after
-a successful report. Receipts are local evidence, not signed attestations against
+The empty receipts folder is removed non-recursively when possible; a nonempty
+or busy folder stays, and the shared base is never removed. No per-run receipt
+remains after a successful report. Receipts are local evidence, not signed attestations against
 a malicious caller who can also edit the seal or scripts. Findings and final
 reports are intentional review artifacts, stored outside the run. No services,
 process registries or telemetry remain.

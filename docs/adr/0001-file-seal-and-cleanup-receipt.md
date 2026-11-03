@@ -28,8 +28,9 @@ discard only its guarded pending receipt.
 This keeps the five commands and the approved ordering with a bounded temporary
 receipt lifecycle and no dependencies. The receipt can be large but is never
 printed or inserted into findings. It is not authenticated against the caller:
-a caller able to falsify it can also alter seal.json. Only an empty shared
-receipts directory may remain after a successful report.
+a caller able to falsify it can also alter seal.json. Fix round 2 adds best-effort
+non-recursive removal of the empty receipts directory after deletion. Nonempty
+or busy folders stay, and the shared temporary base is never removed.
 
 The original build used a caller-held base64url receipt to avoid retaining run
 metadata. Review F2 showed that output grows beyond what agents can carry. The

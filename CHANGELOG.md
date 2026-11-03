@@ -12,3 +12,7 @@
 - Keep cleanup receipts in guarded temporary files, read them by run id, and
   delete them after a successful report instead of printing large receipt bodies.
 - Refuse zero-try reports and align Tried/Saw/Where/Advice value columns.
+- Fix round 2: suggest --skip when an absolute or escaping link is inside a
+  skippable folder, while keeping the refusal and containment checks intact.
+- Remove the receipts folder non-recursively after its final receipt is deleted;
+  leave other runs, nonempty or busy folders, and the temporary base alone.

@@ -59,7 +59,9 @@ the report say nothing is left behind. A failed report retains the receipt for a
 retry. No receipt body belongs in findings JSON. On an interrupted run, stop your
 process and use the same cleanup command. If the run is already gone and you
 abandon its pending report, cleanup with that run id deletes only its guarded
-receipt. Empty shared base/receipts folders may remain, with no per-run data.
+receipt. After deletion the CLI attempts to remove the empty receipts folder
+without recursion. A nonempty or busy folder stays; the shared base is never
+removed. No other run's files are deleted.
 Never improvise deletion.
 
 ## W6: Nothing leaves this computer

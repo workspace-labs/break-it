@@ -77,7 +77,9 @@ real project is still unchanged, then deletes the receipt after success. The
 agent never has to carry a large receipt or put it in findings. Failed reports
 keep it so corrected findings can be retried. See [the report format](references/report-format.md).
 If you abandon a pending report after its run is gone, use cleanup with the same
-run id to delete only that receipt. Empty shared temporary folders may remain.
+run id to delete only that receipt. The CLI then attempts to remove the empty
+receipts folder without recursion; a nonempty or busy folder stays. The shared
+break-it temporary base is kept.
 Keep findings outside both source and run so they do not change the seal or get
 deleted. Cleanup on a changed source removes its own copy but exits 3 with no
 report receipt. Preserve the alarm; never turn it into a clean report.

@@ -94,7 +94,8 @@ the app's working folder separately. Do not install tools or dependencies.
    then does its footer say nothing is left behind. A failed report keeps the
    receipt so you can correct the findings and retry; never claim that it finished.
    If you abandon that pending report, use cleanup with the same run id to delete
-   only its guarded receipt. Empty shared temporary folders may remain.
+   only its guarded receipt. The CLI attempts non-recursive removal of the empty
+   receipts folder; a nonempty or busy folder stays, and the shared base is kept.
    Never fabricate a receipt, seal result, attack count, or observation. If any
    step fails, report the failure plainly and do not claim a completed clean run.
 
