@@ -4,6 +4,7 @@ import { writeFile, readFile, unlink, lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { cli, project, newRun, receiptFileFrom } from './helpers.mjs';
 import { validateFindings } from '../scripts/lib/report.mjs';
+import { saveReceipt } from '../scripts/lib/receipts.mjs';
 
 const hole = { id: 'B01', severity: 'CRITICAL', title: 'Other people’s orders are open',
   Tried: 'User A opened user B’s order', Saw: 'B’s synthetic order details',
@@ -56,7 +57,7 @@ test('W3 report refuses missing cleanup receipt or live run, and rechecks seal a
   const receipt = await readFile(s.receiptFile, 'utf8');
   await unlink(s.receiptFile);
   assert.notEqual((await s.report()).status, 0);
-  await writeFile(s.receiptFile, receipt);
+  await saveReceipt(s.run.id, JSON.parse(receipt));
   await writeFile(path.join(s.p, 'hello.txt'), 'late change');
   const changed = await s.report();
   assert.equal(changed.status, 3);
