@@ -44,6 +44,10 @@ keep the receipt so corrected findings can be retried.
 tested copy; the example line number is illustrative. Do not put an absolute
 personal path in a report.
 
+For C02 history, use `<file>:<line> -> commit <7-char hash>` with the actual
+historical line. The relative file and positive line keep the existing location
+contract; the commit identifies the inspected version. Never paste raw history.
+
 Every finding needs a nonempty id, title, **Tried**, **Saw**, **Where**, **Advice**
 and a severity of **CRITICAL** or **SMALL**. Report rejects missing evidence rather
 than filling it in. State the observed effect and test boundary without private
@@ -56,10 +60,19 @@ nonempty, single-line strings. Skip ids must be unique and must not also appear
 in `findings`. An absent or empty list is valid. Skipped or incomplete tries do
 not change any attack count and are never counted as blocked.
 
+A whole secret is never saved in findings JSON, even temporarily. Use first
+3 characters + `…` + last 4 and its length, for example `sk-…a91f (51 chars)`;
+values of 8 characters or fewer use `•••• (N chars)`. Describe sensitive response
+fields without their values. The shared [pattern list](leak-patterns.md) guards
+all finding text and skipped text; a matching unmasked value is refused with
+`Refused: finding <id> contains an unmasked secret; use the masked form.`
+Fix the evidence by using its masked form before retrying; a refused report must
+not emit secret-bearing evidence or consume its cleanup receipt.
+
 ## Output shape
 
 ```text
-BREAK-IT REPORT shop-app · version 0.2.0
+BREAK-IT REPORT shop-app · version 0.3.0
 Seal: real project unchanged
 Attacks: 2 tried   1 blocked   1 got through
 
@@ -83,7 +96,8 @@ been ruled out.
 
 When two or more findings share a `Where` file and line, report adds one line
 per shared location after all findings. It ignores any ` -> anchor text` when
-grouping, but keeps every finding, its original evidence and all counts:
+grouping, but keeps every finding, its original evidence and all counts. One
+blank line separates the first `Same cause` line from the findings:
 
 ```text
 Same cause: A01, A03, A08 point to server.mjs:57; one fix may close all three.

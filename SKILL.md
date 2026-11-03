@@ -1,9 +1,9 @@
 ---
 name: break-it
-description: "Use when an independent reviewer asks to break, attack, or stress-test their own project before release, on a throwaway localhost copy. Tests bad input and access control and reports holes. Never for the builder testing their own delivery, live sites, other people's systems, code fixes, or load/performance testing."
+description: "Use when an independent reviewer asks to break, attack, or stress-test their own project before release, on a throwaway localhost copy. Tests bad input, access control and leaks: secrets in files/history, over-sharing replies, error details and logs. Reports holes. Never for the builder testing their own delivery, live sites, other people's systems, code fixes, or load/performance testing."
 ---
 
-# Break-it 0.2.0
+# Break-it 0.3.0
 
 Find holes in the owner's own project before release. Only the independent reviewer
 (scanner) uses this skill. It reports evidence in plain words; it never fixes code.
@@ -40,13 +40,20 @@ the app's working folder separately. Do not install tools or dependencies.
 ## Part 2: Attack the copy
 
 1. Read what the delivered change was meant to do, from the card or the owner's
-   words. Read [bad user & crashes](references/attacks-bad-user.md) and
-   [other people's data](references/attacks-other-data.md). Pick applicable tries;
+   words. Read [bad user & crashes](references/attacks-bad-user.md),
+   [other people's data](references/attacks-other-data.md), and
+   [leaks](references/attacks-leaks.md). Pick applicable tries;
    record each inapplicable try in the optional findings JSON `skipped` list,
    for example `{"id":"A07","reason":"No create or update route to submit twice"}`.
    Use unique ids that do not also appear in findings. Skips never change counts.
-2. Before startup, inspect the copy's startup code and configuration. Use isolated
-   local test data and disposable users A, B, and a normal user. Disable every
+2. Before startup, run `node scripts/break-it.mjs scan <run-id>` on the copy.
+   Read [the pattern list and limits](references/leak-patterns.md); a clean result
+   means only those patterns were not found in the files inspected. Record size
+   skips and other incomplete coverage. Check history through C02's direct
+   `git log` → `mask` pipe; never display or save raw history or secret-bearing
+   source lines. Missing git or a copy without `.git` is a skipped C02 with a reason.
+   Inspect the copy's startup code and configuration through secret-safe views.
+   Use isolated local test data and disposable users A, B, and a normal user. Disable every
    external integration through existing local test settings. Do not use production
    accounts or shared data. If local-only operation cannot be established, stop.
 3. Start the app **only from the copy folder**, bound to a free localhost port.
@@ -63,7 +70,8 @@ the app's working folder separately. Do not install tools or dependencies.
 4. Try one case at a time, using one `send` command per request and the bounded
    cases from the references. `send` makes one local-only request with a 5-second
    deadline, no redirects or retries, a 64 KiB request-body cap, and a 2 KiB
-   response-body display cap with `(cut)` when truncated. Include JSON envelope
+   response-body display cap with `(cut)` when truncated. Detected secret values
+   are masked before CLI display. Include JSON envelope
    bytes in the request limit. A cut response or timeout may leave a try
    inconclusive; never invent evidence from the unseen part of a response.
    Observe the response and whether the app stays healthy. Count each completed
@@ -72,7 +80,15 @@ the app's working folder separately. Do not install tools or dependencies.
 5. Log each got-through try with its id, severity, title, **Tried, Saw, Where,
    Advice**. Locate the actual line in the copy, expressed as a relative `file:line`.
    Keep evidence outside the run folder so cleanup cannot erase the report input.
-   Use invented example data; do not copy private values into findings.
+   Use invented example data; do not copy private values into findings. A whole
+   secret is never printed, saved, or reported: use its first 3 characters + `…`
+   + last 4 and its length; values of 8 characters or fewer use `•••• (N chars)`.
+   For C03/C04 use `send`; describe private fields without copying their values.
+6. After the tries, run `node scripts/break-it.mjs scan <run-id>` again for C05:
+   inspect only logs the app wrote inside the copy, looking for invented passwords
+   or tokens sent during this run. Compare before/after masked hits and locations;
+   do not treat pre-existing configuration hits as evidence that a request was logged.
+   Test the documented placeholder safe control too. Keep all evidence masked.
 
 ## Part 3: Check the seal
 

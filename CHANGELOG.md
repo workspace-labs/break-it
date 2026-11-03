@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0] - 2026-11-03
+
+- Add Family C: secrets in copy-local files and git history, over-sharing replies,
+  detailed errors, and passwords/tokens or personal data retained in local logs.
+- Add bounded, dependency-free `scan` and stdin `mask` commands with a shared
+  documented pattern list, placeholder controls and masked output only.
+- Refuse matching unmasked secrets in report evidence and skipped text; separate
+  the first same-cause note from findings with a blank line.
+- Mask detected CLI reply credentials, including short named values, while
+  preserving the response cap; attach historical hunk line numbers to git hits.
+- Extend the synthetic shop and real two-round demo with file, reply and error
+  leaks, keeping the answer key outside the app and the placeholder unflagged.
+- Preserve reviewer-only use, the copy/localhost walls and approved docs unchanged.
+
 ## [0.2.0] - 2026-11-03
 
 - T1: Add optional skipped-try ids and reasons to findings JSON and reports,

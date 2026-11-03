@@ -107,10 +107,29 @@ export async function probeShop(port, folder) {
     Tried: 'Sent 50 wrong logins for synthetic user B, sequentially on localhost',
     Saw: 'All 50 answered without a retry limit', Where: where('const limited ='),
     Advice: 'Apply a bounded retry limit and a clear retry-later response' });
+  const profile = await request(port, '/profile', { token });
+  if (profile.status !== 200 || profile.data.user !== 'A') throw new Error('Profile control failed');
+  if (Object.hasOwn(profile.data, 'passwordHash')) {
+    findings.push({ id: 'C03', severity: 'CRITICAL', title: 'Profile replies expose a password hash',
+      Tried: 'Opened /profile as synthetic user A',
+      Saw: 'The reply included a passwordHash field; its value is withheld',
+      Where: where('if (!omitPrivate) profile.passwordHash'),
+      Advice: 'Return only the public profile fields; never return password hashes' });
+  } else blocked++;
+  const detail = await request(port, '/catalog-error', { token });
+  if (detail.status !== 500) throw new Error('Error-route control failed');
+  if (/SQLITE_ERROR|\/srv\/shop\/catalog\.mjs/.test(detail.text)) {
+    findings.push({ id: 'C04', severity: 'SMALL', title: 'Error replies expose internal details',
+      Tried: 'Opened /catalog-error as synthetic user A',
+      Saw: 'HTTP 500 included a database error and an internal source path',
+      Where: where('const hideDetails ='),
+      Advice: 'Return a plain error message without database or internal path details' });
+  } else if (detail.data.error === 'Request failed') blocked++;
+  else throw new Error('Inconclusive error-detail response');
   const alive = await request(port, '/safe-orders/1', { token });
   if (alive.status !== 200) throw new Error('Server-alive control failed');
   return { project: 'shop-app', findings,
-    attacks: { tried: 4, blocked, gotThrough: findings.length } };
+    attacks: { tried: 6, blocked, gotThrough: findings.length } };
 }
 
 async function round(source, number, workspace, runFolders) {
@@ -121,8 +140,26 @@ async function round(source, number, workspace, runFolders) {
   let app;
   let reported = false;
   try {
+    const before = cli('scan', runId);
+    const configHit = /^(config\.mjs:[1-9]\d*)  (.+)$/m.exec(before);
+    if (before !== 'No secrets found' && (!configHit || before.split('\n').length !== 1)) {
+      throw new Error('Unexpected file-scan result in synthetic shop');
+    }
+    if (before.includes('.env.example:')) throw new Error('Placeholder safe control was flagged');
     app = await startShop(copy);
     const findings = await probeShop(app.port, copy);
+    const after = cli('scan', runId);
+    if (after !== before) throw new Error('Unexpected new file-scan result after synthetic tries');
+    findings.attacks.tried += 2;
+    findings.attacks.blocked++;
+    if (configHit) {
+      findings.findings.unshift({ id: 'C01', severity: 'CRITICAL', title: 'A secret is stored in configuration',
+        Tried: 'Scanned the copy before startup and after the requests',
+        Saw: `A config assignment matched ${configHit[2]}`,
+        Where: configHit[1], Advice: 'Keep secret values out of source files and build output' });
+      findings.attacks.gotThrough++;
+    } else findings.attacks.blocked++;
+
     await stopShop(app);
     app = undefined;
     const seal = cli('seal', runId);
@@ -155,10 +192,11 @@ export async function runDemo() {
     const file = path.join(fixed, 'server.mjs');
     let source = await readFile(file, 'utf8');
     // Builder simulation is restricted to this synthetic fixture in the harness workspace.
-    for (const name of ['limited', 'validateEmpty', 'requireOwner']) {
+    for (const name of ['limited', 'validateEmpty', 'requireOwner', 'omitPrivate', 'hideDetails']) {
       source = source.replace(`const ${name} = false;`, `const ${name} = true;`);
     }
     await writeFile(file, source);
+    await writeFile(path.join(fixed, 'config.mjs'), 'export const API_KEY = "";\n');
     const second = await round(fixed, 2, workspace, runFolders);
     return { output: `${first.report}\n\n${second.report}\n`,
       rounds: [first.findings, second.findings], runFolders };

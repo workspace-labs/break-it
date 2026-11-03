@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { API_KEY } from './config.mjs';
 
 // All people, credentials and orders below are synthetic teaching data.
 const users = { A: 'example-a', B: 'example-b', admin: 'example-admin' };
@@ -45,6 +46,20 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/admin') {
       return user === 'admin' ? send(res, 200, { admin: true })
         : send(res, 403, { error: 'Admin only' });
+    }
+    if (req.method === 'GET' && url.pathname === '/profile') {
+      const omitPrivate = false;
+      const profile = { user };
+      const digest = 'synthetic-password-hash-local-only';
+      if (!omitPrivate) profile.passwordHash = digest;
+      return send(res, 200, profile);
+    }
+    if (req.method === 'GET' && url.pathname === '/catalog-error') {
+      const hideDetails = false;
+      return send(res, 500, hideDetails ? { error: 'Request failed' } : {
+        error: 'SQLITE_ERROR: no such table: inventory at /srv/shop/catalog.mjs:18',
+        integrationEnabled: Boolean(API_KEY)
+      });
     }
     if (req.method === 'POST' && url.pathname === '/echo') {
       const data = await body(req);

@@ -1,5 +1,15 @@
 # Safety walls
 
+## Contents
+
+- [W1: Own project, local only](#w1-own-project-local-only)
+- [W2: Attack only the copy](#w2-attack-only-the-copy)
+- [W3: Seal before report](#w3-seal-before-report)
+- [W4: Report only](#w4-report-only)
+- [W5: No temporary run left behind](#w5-no-temporary-run-left-behind)
+- [W6: Nothing leaves this computer](#w6-nothing-leaves-this-computer)
+- [W7: Hook-friendly commands](#w7-hook-friendly-commands)
+
 These walls apply to every run, including a retest. The CLI handles file checks,
 copying, fingerprints, deletion, and report rendering. The reviewer remains
 responsible for proving the app can run locally without touching shared systems;
@@ -41,6 +51,11 @@ no Backloop/pipeline status moves, and no Commit, Accept, or Reject. Give genera
 output to the reviewer's Break-tries notes. The builder fixes separately; the
 owner controls release decisions.
 
+A whole secret value is never printed, saved, or reported. Use first 3 characters,
+then `…`, then last 4, followed by the length; values of 8 characters or fewer use
+`•••• (N chars)`. The report guard refuses matching unmasked values in findings
+or skipped text. Do not work around it by changing the spelling or encoding.
+
 ## W5: No temporary run left behind
 
 Stop only the app you started, then use:
@@ -78,9 +93,19 @@ accounts, shared databases, or production data. If the copy cannot be made fully
 local without code changes, stop and explain the blocker. These reviewer checks
 are essential: the CLI does not intercept arbitrary app network traffic.
 
+Leaks are inspected only in the copy. Use `scan` for files and copy-local logs;
+pipe copy-local git history directly into `mask` without displaying or saving raw
+history. Never send a candidate key to a provider to check it. Mask before any
+output or evidence storage, including local notes; keeping a secret on this
+computer is still a leak. Use field names rather than copying private reply data.
+`send` masks detected secret values before CLI display. This is pattern-based;
+do not display arbitrary secret-bearing data through another tool or save raw
+responses as evidence.
+
 ## W7: Hook-friendly commands
 
-Use `node scripts/break-it.mjs` for check, copy, send, seal, cleanup, and report. Use
+Use `node scripts/break-it.mjs` for check, copy, scan, mask, send, seal, cleanup, and report. Use
 Node's standard library for portable data handling. Do not use privileged shell
 commands, destructive shell shortcuts, downloaded installers, or Git history
-rewrites. No platform-specific shell script is required.
+rewrites. The one plain-git exception reads history from the copy and pipes it
+straight into `mask`, as shown in C02. No platform-specific shell script is required.
