@@ -7,6 +7,8 @@
 - Add bounded bad-user/crash and other-people's-data try lists, a synthetic shop
   with three planted holes, and reproducible before/after reports.
 - Keep the owner's approved documents unchanged. No dependencies or installation.
+- Add the README hero picture (media/break-it-hero.png); README now says Windows is not
+  tested yet.
 - Fix round 1: seal symbolic links by their distinct link text and preserve safe
   relative links in copies; skipped folders remain sealed without copying links.
 - Keep cleanup receipts in guarded temporary files, read them by run id, and

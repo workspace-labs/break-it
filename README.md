@@ -1,12 +1,14 @@
 # Break-it · 0.1.0
 
+![break-it: find the hole a hacker would find, first](media/break-it-hero.png)
+
 Before release, let the **reviewer** try to break your own app on a throwaway
 local copy. Break-it helps find bad-input failures and cases where one user can
 read another user's data. It reports what happened, where, and what to fix.
 The builder fixes the holes; Break-it never fixes them.
 
 For Claude Code, Codex and other agents that read Agent Skills. Requires Node
-18 or newer on Mac or Windows. There are no packages to install.
+18 or newer. Tested on macOS; Windows is not tested yet. There are no packages to install.
 The owner chose `break-it-skill` as this build folder; the skill's discovery name
 is `break-it`. A future installation should use a folder named `break-it` to match
 that name. This build does not install itself into any agent's skill collection.
