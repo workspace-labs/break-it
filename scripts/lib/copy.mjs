@@ -1,4 +1,4 @@
-import { mkdir, readdir, lstat, copyFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, lstat, copyFile, writeFile, readlink, realpath, symlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { checkTarget } from './target.mjs';
@@ -7,6 +7,31 @@ import { fingerprint, verifySeal } from './seal.mjs';
 import { removeRun } from './cleanup.mjs';
 
 const skipped = new Set(['node_modules', '.git', 'dist', 'build', 'out', 'coverage', '.next']);
+function isInside(root, target) {
+  const relative = path.relative(root, target);
+  return relative === '' || relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
+}
+async function copyLink(src, dest, source) {
+  const name = path.relative(source, src);
+  const text = await readlink(src);
+  if (path.isAbsolute(text) || path.win32.parse(text).root) {
+    throw new Error(`Refused: absolute symbolic link: ${name}`);
+  }
+  const target = path.resolve(path.dirname(src), text);
+  if (!isInside(source, target)) throw new Error(`Refused: symbolic link leads outside the project: ${name}`);
+  let resolved;
+  // Resolve the link itself: normalizing its text first changes symlink/.. semantics.
+  try { resolved = await realpath(src); } catch {
+    throw new Error(`Refused: symbolic link target cannot be resolved safely: ${name}`);
+  }
+  if (!isInside(source, resolved)) throw new Error(`Refused: symbolic link leads outside the project: ${name}`);
+  const kind = (await lstat(resolved)).isDirectory() ? 'dir' : 'file';
+  try { await symlink(text, dest, kind); } catch (error) {
+    const windows = process.platform === 'win32'
+      ? ' Windows link creation may need permissions or Developer Mode; use --skip for dependency/build folders.' : '';
+    throw new Error(`Refused: could not recreate symbolic link ${name}: ${error.code}.${windows}`);
+  }
+}
 export async function copyProject(input, skip = false) {
   const source = await checkTarget(input);
   const base = await basePath();
@@ -27,8 +52,8 @@ export async function copyProject(input, skip = false) {
         const src = path.join(from, name);
         const dest = path.join(to, name);
         const info = await lstat(src);
-        if (info.isSymbolicLink()) throw new Error(`Refused: symbolic link in project: ${name}`);
-        if (info.isDirectory()) await copy(src, dest);
+        if (info.isSymbolicLink()) await copyLink(src, dest, source);
+        else if (info.isDirectory()) await copy(src, dest);
         else if (info.isFile()) await copyFile(src, dest);
         else throw new Error(`Refused: special file in project: ${name}`);
       }

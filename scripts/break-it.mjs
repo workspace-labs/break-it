@@ -15,8 +15,11 @@ async function main(args) {
     console.log(await sealRun(first));
   } else if (command === 'cleanup' && first && rest.length === 0) {
     const receipt = await cleanupRun(first);
-    console.log('Copy deleted. Nothing left behind.');
-    console.log('Receipt: ' + Buffer.from(JSON.stringify(receipt)).toString('base64url'));
+    if (receipt.discarded) console.log('Receipt deleted. Nothing left behind.');
+    else {
+      console.log('Copy deleted. Receipt saved for report.');
+      console.log('Receipt file: ' + receipt.file);
+    }
   } else if (command === 'report' && first && rest.length === 1) {
     const { reportRun } = await import('./lib/report.mjs');
     console.log(await reportRun(first, JSON.parse(await readFile(rest[0], 'utf8'))));

@@ -47,7 +47,7 @@ for (const kind of ['edit', 'add', 'delete']) {
     assert.match(result.stderr, kind === 'add' ? /added.txt/ : /hello.txt/);
   });
 }
-test('W2 refuses links instead of giving the copy access to the real project', async t => {
+test('W2 refuses absolute links instead of giving the copy access to the real project', async t => {
   const p = await project(t);
   await symlink(path.join(p, 'hello.txt'), path.join(p, 'alias'), 'file');
   const result = cli('copy', p);
@@ -60,7 +60,7 @@ test('W5 cleanup removes one run and leaves its sibling and real data alone', as
   const b = newRun(t, p);
   const result = cli('cleanup', a.id);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Copy deleted\. Nothing left behind\./);
+  assert.match(result.stdout, /Copy deleted\. Receipt saved for report\./);
   await assert.rejects(lstat(a.dir), { code: 'ENOENT' });
   assert.ok((await lstat(b.copy)).isDirectory());
   assert.equal(await readFile(path.join(p, 'hello.txt'), 'utf8'), 'original');

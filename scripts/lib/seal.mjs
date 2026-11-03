@@ -1,4 +1,4 @@
-import { readdir, lstat, readFile } from 'node:fs/promises';
+import { readdir, lstat, readFile, readlink } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { readSeal } from './runs.mjs';
@@ -11,8 +11,8 @@ export async function fingerprint(root) {
       const absolute = path.join(dir, name);
       const relative = prefix + name;
       const info = await lstat(absolute);
-      if (info.isSymbolicLink()) throw new Error(`Refused: symbolic link in project: ${relative}`);
-      if (info.isDirectory()) await walk(absolute, relative + '/');
+      if (info.isSymbolicLink()) files[relative] = { type: 'symlink', text: await readlink(absolute) };
+      else if (info.isDirectory()) await walk(absolute, relative + '/');
       else if (info.isFile()) files[relative] = createHash('sha256').update(await readFile(absolute)).digest('hex');
       else throw new Error(`Refused: special file in project: ${relative}`);
     }
@@ -22,7 +22,7 @@ export async function fingerprint(root) {
 }
 export function differences(before, after) {
   return [...new Set([...Object.keys(before), ...Object.keys(after)])].sort().flatMap(file => {
-    if (before[file] === after[file]) return [];
+    if (JSON.stringify(before[file]) === JSON.stringify(after[file])) return [];
     return [`${!Object.hasOwn(before, file) ? 'added' : !Object.hasOwn(after, file) ? 'removed' : 'changed'}: ${file}`];
   });
 }

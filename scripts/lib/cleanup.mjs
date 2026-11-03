@@ -1,6 +1,7 @@
 import { rm, lstat } from 'node:fs/promises';
 import { runPath, readSeal } from './runs.mjs';
 import { verifySeal } from './seal.mjs';
+import { saveReceipt, deleteReceipt } from './receipts.mjs';
 
 export async function removeRun(id) {
   const dir = await runPath(id);
@@ -10,7 +11,13 @@ export async function removeRun(id) {
   throw new Error('Refused: run folder still exists after cleanup.');
 }
 export async function cleanupRun(id) {
-  await runPath(id);
+  const dir = await runPath(id, { exists: false });
+  let present = true;
+  try { await lstat(dir); } catch (error) { if (error.code === 'ENOENT') present = false; else throw error; }
+  if (!present) {
+    await deleteReceipt(id);
+    return { discarded: true };
+  }
   let data;
   let failure;
   try {
@@ -22,5 +29,5 @@ export async function cleanupRun(id) {
     failure.message += '\nCopy deleted. No report receipt: the seal did not pass.';
     throw failure;
   }
-  return { ...data, cleaned: true };
+  return { file: await saveReceipt(id, { ...data, cleaned: true }) };
 }

@@ -23,8 +23,8 @@ export function newRun(t, dir, ...options) {
   t.after(() => cli('cleanup', id));
   return { id, dir: path.join(tmpdir(), 'break-it', id), copy: path.join(tmpdir(), 'break-it', id, 'copy') };
 }
-export function receiptFrom(result) {
-  const encoded = result.stdout.match(/^Receipt: (.+)$/m)?.[1];
-  if (!encoded) throw new Error(result.stderr || result.stdout);
-  return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+export function receiptFileFrom(result) {
+  const file = result.stdout.match(/^Receipt file: (.+)$/m)?.[1];
+  if (!file) throw new Error(result.stderr || result.stdout);
+  return file;
 }

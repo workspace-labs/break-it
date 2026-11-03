@@ -130,7 +130,7 @@ async function round(source, number, workspace, runFolders) {
   const copy = path.join(os.tmpdir(), 'break-it', runId, 'copy');
   runFolders.push(path.dirname(copy));
   let app;
-  let cleaned = false;
+  let reported = false;
   try {
     app = await startShop(copy);
     const findings = await probeShop(app.port, copy);
@@ -139,17 +139,20 @@ async function round(source, number, workspace, runFolders) {
     const seal = cli('seal', runId);
     if (!seal.includes('Seal: real project unchanged')) throw new Error('Seal did not pass');
     const cleanup = cli('cleanup', runId);
-    cleaned = true;
-    const encoded = /^Receipt: (.+)$/m.exec(cleanup)?.[1];
-    if (!encoded) throw new Error('Cleanup returned no receipt');
-    findings.receipt = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    if (!/^Receipt file: .+$/m.test(cleanup)) throw new Error('Cleanup returned no receipt file');
     findings.round = number;
     const file = path.join(workspace, `round-${number}.json`);
     await writeFile(file, JSON.stringify(findings));
-    return { findings, report: cli('report', runId, file) };
+    const report = cli('report', runId, file);
+    reported = true;
+    return { findings, report };
   } finally {
     if (app) await stopShop(app);
-    if (!cleaned) cli('cleanup', runId);
+    if (!reported) {
+      // A failed demo needs no future report. Dispose of the copy and any receipt.
+      const disposed = spawnSync(process.execPath, [cliPath, 'cleanup', runId], { encoding: 'utf8' });
+      if (/^Receipt file: /m.test(disposed.stdout || '')) cli('cleanup', runId);
+    }
   }
 }
 
