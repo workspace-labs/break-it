@@ -1,0 +1,355 @@
+{
+  "project": {
+    "name": "Break-it Skill",
+    "accent": "Break-it",
+    "client": "Mohammad Aljaziri",
+    "version": "0.1",
+    "summary": "A skill the reviewer runs before a project is pushed. It attacks a throwaway copy of your own app the way a real hacker would: bad input, other people's data, injection, password guessing, leaked secrets, floods of users, and AI or desktop tricks. It reports every hole in plain words, critical first. It never fixes code, never touches your real project and never attacks a live site.",
+    "actors": [
+      {
+        "name": "Owner",
+        "role": "Owns the project; only he Accepts or Rejects."
+      },
+      {
+        "name": "Scanner",
+        "role": "The reviewer agent; runs break-it on a delivered card."
+      },
+      {
+        "name": "Break-it",
+        "role": "The skill; attacks the copy and writes the report."
+      },
+      {
+        "name": "Scratch copy",
+        "role": "A throwaway copy of the project; the only thing attacked."
+      },
+      {
+        "name": "Real project",
+        "role": "Your project; sealed with a fingerprint, never touched."
+      },
+      {
+        "name": "Builder",
+        "role": "The agent that fixes the holes; break-it never fixes."
+      }
+    ],
+    "assumptions": [
+      "Only your own projects are attacked, never a live or other site.",
+      "Floods of users run against a local copy only.",
+      "Version 0.1 attacks as a bad user: wrong, empty and huge input.",
+      "Version 0.2 tries to reach other people's data.",
+      "Version 0.3 adds injection and password guessing.",
+      "Version 0.4 hunts bad settings, secrets and old libraries.",
+      "Version 0.5 floods the app with thousands of users.",
+      "Version 0.6 adds AI prompt tricks and desktop-app attacks."
+    ],
+    "open_questions": [
+      "Public on GitHub, or private?",
+      "Which real past bugs prove that version 0.1 works?",
+      "Which project is the first real target?"
+    ]
+  },
+  "parts": [
+    {
+      "title": "Start safely",
+      "summary": "Before any attack: check the target is yours, make a throwaway copy and seal the real project.",
+      "lanes": [
+        "Scanner",
+        "Break-it",
+        "Real project"
+      ],
+      "nodes": [
+        {
+          "id": "start",
+          "type": "start",
+          "lane": "Scanner",
+          "title": "Card reaches Review"
+        },
+        {
+          "id": "run",
+          "type": "step",
+          "lane": "Scanner",
+          "title": "Runs break-it",
+          "detail": "on the delivered card",
+          "result": "The skill starts"
+        },
+        {
+          "id": "own",
+          "type": "decision",
+          "lane": "Break-it",
+          "title": "Own project, local?",
+          "detail": "never a live site or someone else's",
+          "branches": [
+            {
+              "label": "Yes",
+              "to": "copy"
+            },
+            {
+              "label": "No",
+              "to": "refused"
+            }
+          ]
+        },
+        {
+          "id": "refused",
+          "type": "stop",
+          "lane": "Scanner",
+          "title": "Refused",
+          "detail": "not your project"
+        },
+        {
+          "id": "copy",
+          "type": "step",
+          "lane": "Break-it",
+          "title": "Copies the project",
+          "detail": "to a scratch folder",
+          "result": "A throwaway copy"
+        },
+        {
+          "id": "seal",
+          "type": "step",
+          "lane": "Real project",
+          "title": "Gets a fingerprint",
+          "detail": "every file sealed",
+          "result": "The seal"
+        },
+        {
+          "id": "ready",
+          "type": "end",
+          "lane": "Break-it",
+          "title": "Ready to attack",
+          "to_part": 2
+        }
+      ]
+    },
+    {
+      "title": "Attack the copy",
+      "summary": "Break-it tries every attack in its version's list on the copy, one by one, and logs each hole.",
+      "lanes": [
+        "Break-it",
+        "Scratch copy"
+      ],
+      "nodes": [
+        {
+          "id": "start",
+          "type": "start",
+          "lane": "Break-it",
+          "title": "Has the sealed copy"
+        },
+        {
+          "id": "read",
+          "type": "step",
+          "lane": "Break-it",
+          "title": "Reads the card",
+          "detail": "what was asked and built",
+          "result": "Where to aim"
+        },
+        {
+          "id": "pick",
+          "type": "step",
+          "lane": "Break-it",
+          "title": "Picks the attacks",
+          "detail": "from its version's list",
+          "result": "The attack list"
+        },
+        {
+          "id": "hit",
+          "type": "step",
+          "lane": "Scratch copy",
+          "title": "Takes one attack",
+          "detail": "input, login, flood ...",
+          "result": "Blocked or got through"
+        },
+        {
+          "id": "blocked",
+          "type": "decision",
+          "lane": "Scratch copy",
+          "title": "Blocked?",
+          "branches": [
+            {
+              "label": "Yes",
+              "to": "more"
+            },
+            {
+              "label": "No",
+              "to": "log"
+            }
+          ]
+        },
+        {
+          "id": "log",
+          "type": "step",
+          "lane": "Break-it",
+          "title": "Logs the hole",
+          "detail": "what, where, how bad",
+          "result": "One finding"
+        },
+        {
+          "id": "more",
+          "type": "decision",
+          "lane": "Break-it",
+          "title": "All tried?",
+          "branches": [
+            {
+              "label": "Yes",
+              "to": "done"
+            },
+            {
+              "label": "No",
+              "to": "hit"
+            }
+          ]
+        },
+        {
+          "id": "done",
+          "type": "end",
+          "lane": "Break-it",
+          "title": "Attacks finished",
+          "to_part": 3
+        }
+      ]
+    },
+    {
+      "title": "Check the seal",
+      "summary": "Prove the real project was never touched, then clean up and write the report.",
+      "lanes": [
+        "Break-it",
+        "Real project",
+        "Owner"
+      ],
+      "nodes": [
+        {
+          "id": "start",
+          "type": "start",
+          "lane": "Break-it",
+          "title": "Attacks finished"
+        },
+        {
+          "id": "check",
+          "type": "step",
+          "lane": "Real project",
+          "title": "Seal checked again",
+          "detail": "every file compared",
+          "result": "Same or changed"
+        },
+        {
+          "id": "same",
+          "type": "decision",
+          "lane": "Real project",
+          "title": "Unchanged?",
+          "branches": [
+            {
+              "label": "Yes",
+              "to": "clean"
+            },
+            {
+              "label": "No",
+              "to": "alarm"
+            }
+          ]
+        },
+        {
+          "id": "alarm",
+          "type": "stop",
+          "lane": "Owner",
+          "title": "Stopped loudly",
+          "detail": "the real project changed"
+        },
+        {
+          "id": "clean",
+          "type": "step",
+          "lane": "Break-it",
+          "title": "Deletes the copy",
+          "detail": "leaves no trace",
+          "result": "Nothing left behind"
+        },
+        {
+          "id": "report",
+          "type": "step",
+          "lane": "Break-it",
+          "title": "Writes the report",
+          "detail": "critical holes first",
+          "result": "A plain report"
+        },
+        {
+          "id": "end",
+          "type": "end",
+          "lane": "Break-it",
+          "title": "Report ready",
+          "to_part": 4
+        }
+      ]
+    },
+    {
+      "title": "Report and fix",
+      "summary": "The holes go on the review card, the builder fixes them and break-it attacks again until none are left.",
+      "lanes": [
+        "Break-it",
+        "Scanner",
+        "Builder",
+        "Owner"
+      ],
+      "nodes": [
+        {
+          "id": "start",
+          "type": "start",
+          "lane": "Break-it",
+          "title": "Report ready"
+        },
+        {
+          "id": "notes",
+          "type": "step",
+          "lane": "Scanner",
+          "title": "Adds it to review",
+          "detail": "as the Break-tries",
+          "result": "Findings on the card"
+        },
+        {
+          "id": "crit",
+          "type": "decision",
+          "lane": "Scanner",
+          "title": "Holes left?",
+          "branches": [
+            {
+              "label": "None",
+              "to": "look"
+            },
+            {
+              "label": "Some",
+              "to": "fix"
+            }
+          ]
+        },
+        {
+          "id": "fix",
+          "type": "step",
+          "lane": "Builder",
+          "title": "Fixes the holes",
+          "detail": "break-it never fixes",
+          "result": "A fix round"
+        },
+        {
+          "id": "again",
+          "type": "step",
+          "lane": "Break-it",
+          "title": "Attacks the fix",
+          "detail": "on a fresh copy",
+          "next": "notes",
+          "result": "Fixed or still open"
+        },
+        {
+          "id": "look",
+          "type": "step",
+          "lane": "Owner",
+          "title": "Looks and decides",
+          "detail": "Accept or Reject",
+          "result": "His decision"
+        },
+        {
+          "id": "end",
+          "type": "end",
+          "lane": "Owner",
+          "title": "Pushed clean"
+        }
+      ]
+    }
+  ]
+}
