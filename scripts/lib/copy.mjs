@@ -13,18 +13,20 @@ function isInside(root, target) {
 }
 async function copyLink(src, dest, source) {
   const name = path.relative(source, src);
+  const folder = name.split(path.sep).slice(0, -1).find(part => skipped.has(part));
+  const hint = folder ? ` It is inside ${folder}/; run copy again with --skip to leave that folder out.` : '';
   const text = await readlink(src);
   if (path.isAbsolute(text) || path.win32.parse(text).root) {
-    throw new Error(`Refused: absolute symbolic link: ${name}`);
+    throw new Error(`Refused: absolute symbolic link: ${name}${hint}`);
   }
   const target = path.resolve(path.dirname(src), text);
-  if (!isInside(source, target)) throw new Error(`Refused: symbolic link leads outside the project: ${name}`);
+  if (!isInside(source, target)) throw new Error(`Refused: symbolic link leads outside the project: ${name}${hint}`);
   let resolved;
   // Resolve the link itself: normalizing its text first changes symlink/.. semantics.
   try { resolved = await realpath(src); } catch {
     throw new Error(`Refused: symbolic link target cannot be resolved safely: ${name}`);
   }
-  if (!isInside(source, resolved)) throw new Error(`Refused: symbolic link leads outside the project: ${name}`);
+  if (!isInside(source, resolved)) throw new Error(`Refused: symbolic link leads outside the project: ${name}${hint}`);
   const kind = (await lstat(resolved)).isDirectory() ? 'dir' : 'file';
   try { await symlink(text, dest, kind); } catch (error) {
     const windows = process.platform === 'win32'
