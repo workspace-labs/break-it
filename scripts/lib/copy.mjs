@@ -5,6 +5,7 @@ import { checkTarget } from './target.mjs';
 import { basePath } from './runs.mjs';
 import { fingerprint, verifySeal } from './seal.mjs';
 import { removeRun } from './cleanup.mjs';
+import { safeLabel } from './leaks.mjs';
 
 const skipped = new Set(['node_modules', '.git', 'dist', 'build', 'out', 'coverage', '.next']);
 function isInside(root, target) {
@@ -13,25 +14,26 @@ function isInside(root, target) {
 }
 async function copyLink(src, dest, source) {
   const name = path.relative(source, src);
+  const label = safeLabel(name);
   const folder = name.split(path.sep).slice(0, -1).find(part => skipped.has(part));
   const hint = folder ? ` It is inside ${folder}/; run copy again with --skip to leave that folder out.` : '';
   const text = await readlink(src);
   if (path.isAbsolute(text) || path.win32.parse(text).root) {
-    throw new Error(`Refused: absolute symbolic link: ${name}${hint}`);
+    throw new Error(`Refused: absolute symbolic link: ${label}${hint}`);
   }
   const target = path.resolve(path.dirname(src), text);
-  if (!isInside(source, target)) throw new Error(`Refused: symbolic link leads outside the project: ${name}${hint}`);
+  if (!isInside(source, target)) throw new Error(`Refused: symbolic link leads outside the project: ${label}${hint}`);
   let resolved;
   // Resolve the link itself: normalizing its text first changes symlink/.. semantics.
   try { resolved = await realpath(src); } catch {
-    throw new Error(`Refused: symbolic link target cannot be resolved safely: ${name}`);
+    throw new Error(`Refused: symbolic link target cannot be resolved safely: ${label}`);
   }
-  if (!isInside(source, resolved)) throw new Error(`Refused: symbolic link leads outside the project: ${name}${hint}`);
+  if (!isInside(source, resolved)) throw new Error(`Refused: symbolic link leads outside the project: ${label}${hint}`);
   const kind = (await lstat(resolved)).isDirectory() ? 'dir' : 'file';
   try { await symlink(text, dest, kind); } catch (error) {
     const windows = process.platform === 'win32'
       ? ' Windows link creation may need permissions or Developer Mode; use --skip for dependency/build folders.' : '';
-    throw new Error(`Refused: could not recreate symbolic link ${name}: ${error.code}.${windows}`);
+    throw new Error(`Refused: could not recreate symbolic link ${label}: ${error.code}.${windows}`);
   }
 }
 export async function copyProject(input, skip = false) {
@@ -57,7 +59,7 @@ export async function copyProject(input, skip = false) {
         if (info.isSymbolicLink()) await copyLink(src, dest, source);
         else if (info.isDirectory()) await copy(src, dest);
         else if (info.isFile()) await copyFile(src, dest);
-        else throw new Error(`Refused: special file in project: ${name}`);
+        else throw new Error(`Refused: special file in project: ${safeLabel(name)}`);
       }
     }
     await copy(source, path.join(dir, 'copy'));

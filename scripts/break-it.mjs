@@ -3,7 +3,7 @@ import { checkTarget } from './lib/target.mjs';
 import { copyProject } from './lib/copy.mjs';
 import { sealRun } from './lib/seal.mjs';
 import { cleanupRun } from './lib/cleanup.mjs';
-import { redactSecrets } from './lib/leaks.mjs';
+import { redactSecrets, safeLabel } from './lib/leaks.mjs';
 
 async function main(args) {
   const [command, first, ...rest] = args;
@@ -45,6 +45,9 @@ async function main(args) {
   }
 }
 main(process.argv.slice(2)).catch(error => {
-  console.error(redactSecrets(error.message.startsWith('Refused:') || error.exitCode === 3 ? error.message : `Refused: ${error.message}`));
+  const message = error.message.startsWith('Refused:') || error.exitCode === 3 ? error.message : `Refused: ${error.message}`;
+  // Seal alarms have intentional line breaks and already sanitize dynamic labels.
+  // Other failures can contain raw filesystem paths or parser input excerpts.
+  console.error(error.exitCode === 3 ? redactSecrets(message) : safeLabel(message));
   process.exitCode = error.exitCode || 1;
 });

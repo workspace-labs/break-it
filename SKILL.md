@@ -3,7 +3,7 @@ name: break-it
 description: "Use when an independent reviewer asks to break, attack, or stress-test their own project before release, on a throwaway localhost copy. Tests bad input, access control and leaks: secrets in files/history, over-sharing replies, error details and logs. Reports holes. Never for the builder testing their own delivery, live sites, other people's systems, code fixes, or load/performance testing."
 ---
 
-# Break-it 0.3.0
+# Break-it 0.3.1
 
 Find holes in the owner's own project before release. Only the independent reviewer
 (scanner) uses this skill. It reports evidence in plain words; it never fixes code.

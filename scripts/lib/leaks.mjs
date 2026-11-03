@@ -45,11 +45,19 @@ function genericSecrets(text, minimumLength) {
   const unquotedValue = /[^\s#]+/y;
   const maskedValue = /(?:.{3}….{4}|••••) \(\d+ chars\)/y;
   let unquotedEnd = 0;
+  let arrayEnd = 0;
   let field;
   while ((field = fields.exec(text))) {
     if (!sensitiveName(field[1])) continue;
     const start = field.index + field[0].length;
     const quoted = /["'`]/.test(text[start] || '\0');
+    // A retained array prefix already masks values inside this span. Keep
+    // looking for names whose value begins beyond it without rescanning tails.
+    if (start < arrayEnd) continue;
+    // An object holds fields, not a scalar credential. Do not consume an inner
+    // field name as its parent's unquoted value (JSON commonly has no space
+    // after the opening brace). The same applies to arrays starting in objects.
+    if (!quoted && /^\[*\{\s*(?:(["'])(?:\\[^\r\n]|(?!\1)[^\\\r\n])*\1|[A-Za-z0-9_$][\w$.-]*)\s*[:=]/.test(text.slice(start))) continue;
     // An empty unquoted .env value ends at its newline. Preserve the older
     // quoted case where whitespace between '=' and the literal spans lines.
     if (!quoted && /[\r\n]/.test(field[2])) continue;
@@ -84,6 +92,12 @@ function genericSecrets(text, minimumLength) {
     const value = quoted ? match[2] : match[0];
     const parsedEnd = quoted ? quotedValue.lastIndex : unquotedEnd;
     fields.lastIndex = parsedEnd;
+    if (!quoted && text[start] === '[') {
+      // Preserve existing scalar-array masking, but allow an inner field name
+      // at this prefix's end to lead us to its value after the next whitespace.
+      arrayEnd = parsedEnd;
+      fields.lastIndex = start + 1;
+    }
     const ignored = placeholder(value, quoted);
     if (ignored && !quoted) {
       // An ignored read can precede another minified statement. Resume there

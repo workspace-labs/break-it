@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.1] - 2026-11-04
+
+- Fix nested object credentials being consumed as outer assignment fragments, so
+  scan, history masking, CLI replies and the report guard inspect inner fields.
+- Escape control characters and mask candidate secrets in seal/copy diagnostic
+  filenames, preventing forged status lines and terminal control sequences.
+- Add regression tests and record baseline, failing reproductions, fixed results
+  and local workflow evidence in TEST-EVIDENCE.md.
+
 ## [0.3.0] - 2026-11-03
 
 - Add TEST-EVIDENCE.md: every round of 0.1.0, 0.2.0 and 0.3.0, with tests, break-tries

@@ -72,7 +72,7 @@ not emit secret-bearing evidence or consume its cleanup receipt.
 ## Output shape
 
 ```text
-BREAK-IT REPORT shop-app · version 0.3.0
+BREAK-IT REPORT shop-app · version 0.3.1
 Seal: real project unchanged
 Attacks: 2 tried   1 blocked   1 got through
 

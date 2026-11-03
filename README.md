@@ -1,4 +1,4 @@
-# Break-it · 0.3.0
+# Break-it · 0.3.1
 
 ![break-it: find the hole a hacker would find, first](media/break-it-hero.png)
 
@@ -99,6 +99,9 @@ header assignments, including names such as `DB_PASSWORD`, `client_secret`,
 `accessToken` and `apiKey`. Code that reads an environment variable, template
 references, placeholders and prose without an assignment are ignored. The same
 rule protects history masking and report evidence; see the exact rules above.
+Nested object fields are inspected even beneath a sensitive parent such as
+`auth`; an outer object prefix must not hide its inner password. Seal and copy
+diagnostics escape filename control characters so names cannot forge status lines.
 
 For C02, read the copy's history with plain git and pipe it straight into `mask`:
 
@@ -175,12 +178,12 @@ Tests need permission to open temporary localhost ports. They never contact an
 external host. `node scripts/demo-shop.mjs --write` regenerates the example report
 from real responses. No build step, package installation or account is required.
 
-How every version was tested, round by round (7 rounds, 7 independent reviews), is in
+Historical build/review rounds and the current regression audit are recorded in
 [TEST-EVIDENCE.md](TEST-EVIDENCE.md).
 
 ## Coming next
 
 Future owner-approved versions may add injection, other settings checks,
-floods, AI and desktop checks. They are not implemented in 0.3.0.
+floods, AI and desktop checks. They are not implemented in 0.3.1.
 
-MIT licensed. Nothing is published, tagged or pushed by this build.
+MIT licensed.

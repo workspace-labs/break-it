@@ -1,8 +1,10 @@
 # Test evidence
 
-How break-it was tested, version by version and round by round. The builder (Codex) built every round; an
-independent reviewer (Claude) re-ran the tests on a fresh clone, tried to break it, and gave a verdict. Only the
-owner pushed or installed. All runs were on macOS. **Windows has not been tested yet.**
+How break-it was tested, version by version and round by round. In the historical 0.1–0.3.0 rounds,
+the builder (Codex) built every round and an independent reviewer (Claude) re-ran the tests on a fresh clone,
+tried to break it, and gave a verdict. Only the owner pushed or installed. The new 0.3.1 local audit below
+records its own verification separately; Claude has not reviewed that patch yet.
+All runs were on macOS. **Windows has not been tested yet.**
 
 ## In one table
 
@@ -116,3 +118,131 @@ guard and the shop demo (round 1: 8 tried, 6 holes; round 2: 8 blocked) all held
 - A secret split across two lines is not found.
 - A file copy is not an operating-system sandbox: the reviewer must make sure the app runs locally only.
 - **Windows not tested.** Every run above was on macOS.
+
+
+---
+
+## 0.3.1 — local audit and repairs (2026-11-04)
+
+Status: fixes tested; the owner explicitly requested committing and pushing this
+patch on 2026-11-04. This update includes the repairs, twelve regression tests,
+version 0.3.1 and this test record. No global skill installation was performed.
+Claude has not formally reviewed this patch; publishing it does not claim that review.
+
+The owner requested checking and testing the GitHub skill, fixing confirmed problems,
+and writing down the fixes with evidence. Source: `workspace-labs/break-it`, clean
+`main` at `b59eba7462265d22b36637eee04679ffc190df8f` before edits.
+Environment: macOS, Node `v22.14.0`, npm `10.9.2`, Node standard library only.
+
+### F01 — a sensitive parent could hide an inner password
+
+Before: the generic rule treated an object prefix such as `auth={password:` as
+one scalar value and advanced past the inner field name. A complete synthetic
+password could survive response masking. A short outer prefix could also let
+that raw password through the report guard; scan/history checks missed the inner value.
+
+Fix: `scripts/lib/leaks.mjs` recognizes object containers and continues inspecting
+inner named assignments. Quoted object keys can contain punctuation, Unicode,
+long names and escaped quotes. Mixed arrays retain their existing prefix masking
+while exposing later inner assignments to inspection. Consumed array spans prevent
+repeated suffix scans. Scalar arrays and brace-wrapped scalar values remain masked;
+nested environment/configuration reads and placeholders remain ignored.
+
+Evidence: eight new tests in `tests/leak-nested.test.mjs` cover recognition,
+scan, stdin/history masking, report refusal, safe controls, real localhost CLI
+response masking and bounded handling of large/malformed prefixes.
+
+- Original implementation: four regression tests failed (`audit-leaks/red.log`).
+- A scalar-preservation regression caught during the repair failed, then was
+  corrected (`audit-leaks/red-preservation.log`).
+- A further arbitrary-quoted-key reproduction failed, then was corrected
+  (`audit-leaks/red-container-keys.log`).
+- Final focused run, including existing performance cases: **24 passed, 0 failed,
+  0 skipped** (`audit-leaks/green.log`).
+- Supplemental tester: **1,444 checks passed**, including spacing, nesting,
+  arbitrary first keys, scalar/reference controls; no complete synthetic value
+  survived. Three malformed-input probes completed in **7–63 ms** on this Mac
+  (`workflow-test/nested-adversarial.json`).
+
+### F02 — filenames could forge diagnostic output
+
+Before: source filenames appeared raw in changed-file alarms and link refusals.
+A newline could introduce a fake unchanged-status line; an ANSI escape could clear
+or alter the terminal display. Missing-path filesystem errors had the same issue.
+The seal still exited 3: this was a diagnostic-integrity defect, not a seal bypass.
+
+Fix: `scripts/lib/seal.mjs` and `scripts/lib/copy.mjs` use the existing secret-safe
+label formatter for dynamic names. `scripts/break-it.mjs` sanitizes ordinary error
+messages too. Deliberate multiline seal alarms retain their layout. Exact filenames
+remain unchanged in fingerprint keys; source bytes and cleanup boundaries are preserved.
+
+Evidence: four new tests in `tests/diagnostic-labels.test.mjs` cover changed-file
+seal/cleanup alarms, exact fingerprint keys, credential masking in names,
+absolute-link refusals and crafted missing paths in check/copy/report.
+
+- Original filename regressions: **2 failed, 1 existing control passed**
+  (`audit-seal/red.log`).
+- Additional filesystem-error regression: **1 failed, 3 passed**
+  (`audit-seal/red-filesystem.log`).
+- Focused safety/link/report/receipt verification: **95 passed, 0 failed,
+  0 skipped** (`audit-seal/green-filesystem.log`).
+- Supplemental tester: three error cases exited 1 with no stdout, raw terminal
+  escapes or complete synthetic values (`workflow-test/error-adversarial.json`).
+
+### Complete verification
+
+Evidence folder beside this checkout: `../break-it-review-20261104-evidence/`.
+Paths above are relative to that folder. The original skill backup is
+`baseline/break-it/`; file hashes are in `baseline-manifests.json`.
+
+Commands from the checkout root, with `TMPDIR` set to the evidence folder's
+`temp/` so fixtures and receipts are isolated:
+
+```text
+npm test
+node --test tests/leak-nested.test.mjs tests/leak-performance.test.mjs
+node --test tests/diagnostic-labels.test.mjs tests/safety.test.mjs tests/links.test.mjs tests/skip-hints.test.mjs tests/report.test.mjs tests/receipts.test.mjs tests/receipt-directory.test.mjs
+```
+
+- Initial restricted-sandbox run: **193 passed, 15 failed**, all 15 failures were
+  localhost `EPERM`; those failures are retained (`tests-before.log`).
+- Baseline rerun with localhost permission: **208 passed, 0 failed, 0 skipped**
+  (`tests-baseline-localhost.log`).
+- Final complete suite with localhost permission: **220 passed, 0 failed,
+  0 skipped**, exit 0, approximately **8.06 seconds** (`tests-final.log`).
+- Separate tester's full CLI lifecycle: **13 check groups passed**. A synthetic app
+  ran only from its copy; redirects stayed unfollowed; invalid findings retained
+  the receipt; corrected findings consumed it; a post-cleanup source change
+  refused reporting with exit 3. The tester confirmed its child exited and its
+  runs/receipts were gone (`workflow-test/result.json`).
+- Static skill-audit results are retained as `audit-before.json` and
+  `audit-after.json`. The repair report explains remaining heuristic notices.
+- Approved documents under `docs/` remain byte-identical. No dependency or
+  architecture change. Existing installed skills were inspected but not updated.
+
+Limits: verification ran on Node 22/macOS, not Node 18 or Windows. Synthetic
+fixture testing does not prove every possible secret format is detectable or
+that arbitrary application startup is isolated. Existing documented scanner
+limits continue to apply. Claude's formal review has not been performed. The owner
+explicitly authorized commit/push after reading the local repair summary; global
+installation remains unchanged.
+
+
+### Owner-requested commit and push
+
+On 2026-11-04 the owner requested committing and pushing the tested fixes and
+updating this file. The publication includes the two repairs described above,
+all twelve new regression tests, the 0.3.1 version/changelog update and matching
+instruction/reference updates. The baseline, failing reproductions and passing
+results are preserved in this record; it is not a claim of a Claude review.
+
+Pre-commit verification: the full `npm test` suite passed again with **220 tests,
+0 failures, 0 skipped**, exit 0, approximately **8.22 seconds**
+(`tests-pre-push.log` in the local evidence folder). A separate read-only check
+found no unrelated additions, real credentials or personal absolute paths in the
+new tests or this record. `git diff --check` passed; all approved `docs/` files
+remain byte-identical to the base commit. A fresh fetch confirmed `origin/main`
+still matched the baseline before the commit. Publication targets
+`workspace-labs/break-it` on `main`, using a normal push with no history rewrite. Detailed raw logs and backup copies remain in the
+local evidence folder described above; the regression tests are included in Git
+so another reviewer can rerun them.
