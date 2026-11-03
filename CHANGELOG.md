@@ -2,6 +2,8 @@
 
 ## [0.3.0] - 2026-11-03
 
+- Add TEST-EVIDENCE.md: every round of 0.1.0, 0.2.0 and 0.3.0, with tests, break-tries
+  and verdicts.
 - Add Family C: secrets in copy-local files and git history, over-sharing replies,
   detailed errors, and passwords/tokens or personal data retained in local logs.
 - Add bounded, dependency-free `scan` and stdin `mask` commands with a shared
