@@ -28,7 +28,9 @@ run only on the owner's throwaway copy or on text piped from that copy.
   underscores or hyphens.
 - **Stripe sk_live:** `sk_live_` followed by at least 16 letters/digits.
 - **JWT:** three dot-separated base64url segments, each at least 8 characters;
-  the first starts with `eyJ`. This recognizes a shape, without decoding data.
+  the first starts with `eyJ`. A token may start after a hyphen within a longer
+  base64url run; trailing hyphens in the last segment are excluded, preserving
+  the existing word-boundary behavior. This recognizes a shape, without decoding data.
 - **generic `<field>`:** a sensitive field name assigned a quoted or unquoted
   value with `=` or `:`, under the exact rules below. Candidates need at least
   9 characters. Output names the full field in lowercase, such as
@@ -46,8 +48,11 @@ exempt it; the shop example deliberately uses that control distinction.
 
 ## Generic assignment rule
 
-Field names start with a letter, `_` or `$` and then use letters, digits, `_`,
-`$`, `-` and `.`. Sensitive words can be
+Field names contain 1–128 ASCII characters: they start with a letter, `_` or `$`
+and then use letters, digits, `_`, `$`, `-` and `.`. A name can start only at
+the beginning of input or after a character outside `[\w$.-]`; a long name run
+is never retried from each character or shortened to a sensitive suffix. Names
+longer than 128 characters are outside this rule. Sensitive words can be
 the whole name or a component of a longer name, delimited by `_`, `-`, `.`, or a
 camelCase/PascalCase transition. Names are checked case-insensitively after
 tokenization. The sensitive words are `password`, `passwd`, `pwd`, `secret`,
@@ -77,6 +82,13 @@ token expired today” has no assignment and never matches.
   CLI reply display also masks shorter named credential values; 8 characters
   or fewer use bullets.
 
+Assignment-like text inside an already consumed literal remains part of that
+value; it is not retried as a second generic field. If a quoted value cannot be
+parsed, its remaining line is not retried for nested generic assignments.
+A separate statement after an ignored
+unquoted read's comma or semicolon can still be inspected. These rules keep
+repeated field-like text from repeatedly rescanning the same long value.
+
 Values starting with `process.env` or `os.environ` (followed by a word boundary
 or `[`), or with `${`, `{{` or `<`, are ignored as reads/templates. Values exactly
 `null`, `undefined`, `true` or `false` are ignored case-insensitively. These
@@ -84,11 +96,19 @@ ignores apply to quoted and unquoted values. Trailing commas/semicolons are
 removed only to classify these references, not from a reported value.
 
 For unquoted values only, a bare identifier made entirely of letters, with no
-digits or punctuation, is a reference, as in `token = getToken`. Function calls
-beginning with an identifier or a dotted identifier and `(` are also ignored,
-as in `password = getPassword()`. Quoted alphabetic strings and quoted strings
-that look like function calls remain literal candidates, subject to the other
-ignores. The original placeholder rules above still apply. These choices keep
+digits or punctuation, is a reference, as in `token = getToken`. Plain dotted
+references such as `config.secret`, `settings.db.password`, `this.token` and
+`env.API_KEY` are also ignored. A dotted reference has at least two nonempty
+identifier parts joined by single dots; each part starts with a letter, `_` or
+`$` and contains only letters, `_` or `$`. No part may contain a digit. A
+digit-bearing name is not exempted by this rule and remains a candidate when
+it meets the 9-character minimum and no other ignore applies.
+For this dotted-reference check only, closing `}` characters attached to the
+unquoted value are ignored, so compact object syntax has the same result.
+Function calls beginning with an identifier or a dotted identifier and `(` are
+also ignored, as in `password = getPassword()`. Quoted alphabetic strings, dotted
+strings and strings that look like function calls remain literal candidates,
+subject to the other ignores. The original placeholder rules above still apply. These choices keep
 code that reads a credential from being reported as a stored literal one.
 
 ## Output and limits

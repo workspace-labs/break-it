@@ -20,6 +20,16 @@
   windows with 4 KiB overlap, deduplicating boundary hits and retaining real line
   numbers; name files above the cap or with an unfinished candidate beyond the
   retained boundary overlap as skipped. Version remains 0.3.0.
+- Fix round 2 (2026-11-04): bound generic field names to 128 characters and
+  require a name boundary before each candidate, preventing repeated suffix
+  matching on long single-line bundles. Avoid rescanning consumed values,
+  repeated ignored reads, failed quoted lines and long punctuation tails; keep
+  placeholder checks fast and inspect JWT segments without repeated suffix
+  retries while preserving supported secret shapes and masking.
+- Fix round 2 (2026-11-04): ignore unquoted plain dotted variable references;
+  compact object closing braces do not turn those reads into a finding.
+  Digit-bearing values and quoted literals retain their existing treatment.
+  Version remains 0.3.0.
 
 ## [0.2.0] - 2026-11-03
 

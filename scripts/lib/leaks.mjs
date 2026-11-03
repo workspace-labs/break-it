@@ -6,21 +6,27 @@ const patterns = [
   ['Slack xox', /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g],
   ['AWS AKIA', /\bAKIA[A-Z0-9]{16}\b/g],
   ['Stripe sk_live', /\bsk_live_[A-Za-z0-9]{16,}\b/g],
-  ['OpenAI sk', /\bsk-[A-Za-z0-9_-]{20,}\b/g],
-  ['JWT', /\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g]
+  ['OpenAI sk', /\bsk-[A-Za-z0-9_-]{20,}\b/g]
 ];
 
 function placeholder(value, quoted = true) {
   const text = value.trim();
-  if (/^(?:|example|changeme|x+|your[-_].*[-_]here)$/i.test(text)) return true;
+  if (/^(?:|example|changeme|x+)$/i.test(text) ||
+      text.length >= 10 && /^your[-_]/i.test(text.slice(0, 5)) && /^[-_]here$/i.test(text.slice(-5))) return true;
+  if (/^(?:process\.env|os\.environ)(?:\b|\[)/.test(text) ||
+      /^(?:\$\{|\{\{|<)/.test(text) ||
+      !quoted && /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\(/.test(text)) return true;
   // References read a value instead of storing a credential literal. Terminal
   // JS/JSON punctuation is ignored only for this classification, not evidence.
-  const reference = text.replace(/[,;]+$/, '');
-  if (/^(?:process\.env|os\.environ)(?:\b|\[)/.test(reference) ||
-      /^(?:\$\{|\{\{|<)/.test(reference) ||
-      /^(?:null|undefined|true|false)$/i.test(reference)) return true;
+  let end = text.length;
+  while (end && (text[end - 1] === ',' || text[end - 1] === ';')) end--;
+  const reference = text.slice(0, end);
+  if (/^(?:null|undefined|true|false)$/i.test(reference)) return true;
+  // A compact object may put its closing brace immediately after the read.
+  let dottedEnd = end;
+  while (dottedEnd && text[dottedEnd - 1] === '}') dottedEnd--;
   return !quoted && (/^[A-Za-z]+$/.test(reference) ||
-    /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\(/.test(reference));
+    /^[A-Za-z_$]+(?:\.[A-Za-z_$]+)+$/.test(text.slice(0, dottedEnd)));
 }
 
 function sensitiveName(name) {
@@ -34,31 +40,82 @@ function sensitiveName(name) {
 
 function genericSecrets(text, minimumLength) {
   const hits = [];
-  const fields = /([A-Za-z_$][\w$.-]*)["']?\s*[:=](?!=|>)\s*/g;
+  const fields = /(?<![\w$.-])([A-Za-z_$][\w$.-]{0,127})(?![\w$.-])["']?\s*[:=](?!=|>)(\s*)/g;
   const quotedValue = /(["'`])((?:\\[^\r\n]|(?!\1)[^\\\r\n])*)(?:\1|$)/y;
   const unquotedValue = /[^\s#]+/y;
   const maskedValue = /(?:.{3}….{4}|••••) \(\d+ chars\)/y;
-  for (const field of text.matchAll(fields)) {
+  let unquotedEnd = 0;
+  let field;
+  while ((field = fields.exec(text))) {
     if (!sensitiveName(field[1])) continue;
     const start = field.index + field[0].length;
     const quoted = /["'`]/.test(text[start] || '\0');
     // An empty unquoted .env value ends at its newline. Preserve the older
     // quoted case where whitespace between '=' and the literal spans lines.
-    if (!quoted && /[\r\n]/.test(field[0].match(/\s*$/)[0])) continue;
+    if (!quoted && /[\r\n]/.test(field[2])) continue;
     // Already-masked unquoted evidence includes spaces in its length label.
     // Consume that whole form before the whitespace-delimited value rule.
-    const pattern = quoted ? quotedValue : unquotedValue;
     if (!quoted) {
       maskedValue.lastIndex = start;
-      if (maskedValue.exec(text)) continue;
+      if (maskedValue.exec(text)) { fields.lastIndex = maskedValue.lastIndex; continue; }
     }
-    pattern.lastIndex = start;
-    const match = pattern.exec(text);
-    if (!match) continue;
+    let match;
+    if (quoted) {
+      quotedValue.lastIndex = start;
+      match = quotedValue.exec(text);
+    } else if (start < unquotedEnd) {
+      // Ignored minified reads can resume inside the same whitespace/# run.
+      // Reuse its known end instead of matching the whole suffix each time.
+      match = [text.slice(start, unquotedEnd)];
+    } else {
+      unquotedValue.lastIndex = start;
+      match = unquotedValue.exec(text);
+      if (match) unquotedEnd = unquotedValue.lastIndex;
+    }
+    if (!match) {
+      // A failed quoted value has already been read through its line. Do not
+      // retry its escaped field-like contents from every interior position.
+      if (quoted) {
+        const newline = text.indexOf('\n', start);
+        fields.lastIndex = newline < 0 ? text.length : newline + 1;
+      }
+      continue;
+    }
     const value = quoted ? match[2] : match[0];
-    if (placeholder(value, quoted) || /^(?:.{3}….{4}|••••) \(\d+ chars\)$/.test(value) ||
+    const parsedEnd = quoted ? quotedValue.lastIndex : unquotedEnd;
+    fields.lastIndex = parsedEnd;
+    const ignored = placeholder(value, quoted);
+    if (ignored && !quoted) {
+      // An ignored read can precede another minified statement. Resume there
+      // without re-reading the same value suffix from nested assignment text.
+      let next = start;
+      while (next < parsedEnd && text[next] !== ';' && text[next] !== ',') next++;
+      if (next < parsedEnd) fields.lastIndex = next + 1;
+    }
+    if (ignored || /^(?:.{3}….{4}|••••) \(\d+ chars\)$/.test(value) ||
         Array.from(value).length < minimumLength) continue;
     hits.push({ pattern: `generic ${field[1].toLowerCase()}`, value, index: start + (quoted ? 1 : 0) });
+  }
+  return hits;
+}
+
+function jwtSecrets(text) {
+  const hits = [];
+  // Inspect each base64url run at most as part of three adjacent segments.
+  // A failed two-dot match must not retry every '-eyJ' inside one long run.
+  const triples = /(?<![A-Za-z0-9_-])(?=([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]{8,})\.([A-Za-z0-9_-]{8,}))/g;
+  let previousEnd = -1;
+  for (const triple of text.matchAll(triples)) {
+    let end = triple[3].length;
+    while (end && triple[3][end - 1] === '-') end--;
+    if (end < 8) continue;
+    const prefix = /\beyJ[A-Za-z0-9_-]{5,}$/.exec(triple[1]);
+    if (!prefix) continue;
+    const index = triple.index + prefix.index;
+    if (index < previousEnd) continue;
+    const value = `${triple[1].slice(prefix.index)}.${triple[2]}.${triple[3].slice(0, end)}`;
+    hits.push({ pattern: 'JWT', value, index });
+    previousEnd = index + value.length;
   }
   return hits;
 }
@@ -79,6 +136,7 @@ export function findSecrets(text, { minimumLength = 9 } = {}) {
       candidates.push({ pattern: name, value, index: match.index });
     }
   }
+  for (const hit of jwtSecrets(text)) candidates.push(hit);
   // Merge overlapping spans: an assignment must not hide a longer private block.
   candidates.sort((a, b) => a.index - b.index || b.value.length - a.value.length);
   const merged = [];
