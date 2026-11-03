@@ -1,5 +1,11 @@
 # Built-in leak patterns
 
+## Contents
+
+- [Pattern list](#pattern-list)
+- [Generic assignment rule](#generic-assignment-rule)
+- [Output and limits](#output-and-limits)
+
 `scan`, `mask`, and the report guard share a small built-in list. No lists are
 downloaded and no candidate is checked against an external provider. Matches are
 working-looking candidates, not proof that a credential is live. These checks
@@ -23,20 +29,12 @@ run only on the owner's throwaway copy or on text piped from that copy.
 - **Stripe sk_live:** `sk_live_` followed by at least 16 letters/digits.
 - **JWT:** three dot-separated base64url segments, each at least 8 characters;
   the first starts with `eyJ`. This recognizes a shape, without decoding data.
-- **generic `<field>`:** case-insensitive `password`, `passwordHash`,
-  `password_hash`, `secret`, `token` or `api_key` assigned a quoted value of at
-  least 9 characters with `=` or `:`. Matching single/double quotes or backticks,
-  JSON keys and minified text are supported. Assignment whitespace can span
-  lines; a value itself cannot contain a line break. Other quote types and
-  escaped delimiters are supported; matches use the written value without decoding it.
-  A missing closing quote at the end of input is conservatively treated as a
-  candidate too, including when a CLI reply was cut at the display cap.
-  Only the value is masked, not the whole assignment or line. Hash-field names
-  ensure C03's password hashes are masked before a CLI response is displayed.
-  For CLI reply display only, named credential values shorter than 9 characters
-  are also masked (8 or fewer use bullets); scan/report candidate thresholds stay unchanged.
+- **generic `<field>`:** a sensitive field name assigned a quoted or unquoted
+  value with `=` or `:`, under the exact rules below. Candidates need at least
+  9 characters. Output names the full field in lowercase, such as
+  `generic db_password` or `generic apikey`.
 
-Word boundaries delimit provider shapes and generic field names. When matches
+Word boundaries delimit provider shapes. When matches
 overlap, the containing assignment or private-key block wins over a provider
 match inside it. Partially overlapping spans are merged to avoid exposing any
 part of a private-key body. Values documented as placeholders
@@ -46,6 +44,53 @@ underscores in place of hyphens. Matching is case-insensitive for these
 placeholder checks. An EXAMPLE substring inside a longer synthetic key does not
 exempt it; the shop example deliberately uses that control distinction.
 
+## Generic assignment rule
+
+Field names start with a letter, `_` or `$` and then use letters, digits, `_`,
+`$`, `-` and `.`. Sensitive words can be
+the whole name or a component of a longer name, delimited by `_`, `-`, `.`, or a
+camelCase/PascalCase transition. Names are checked case-insensitively after
+tokenization. The sensitive words are `password`, `passwd`, `pwd`, `secret`,
+`token`, `auth`, `credential` and `credentials`; compound forms include
+`api_key`, `api-key`, `apikey`, `private_key` and `password_hash`, including their
+separated and camelCase/PascalCase equivalents. The unseparated words `apikey`,
+`privatekey` and `passwordhash` also qualify. Examples include `DB_PASSWORD`,
+`STRIPE_SECRET_KEY`, `x-api-key`, `db.password`, `apiKey`, `accessToken`,
+`clientSecret`, `DbPassword` and `passwordHash`. A word merely containing those
+letters without a recognized boundary does not qualify.
+
+The name must be followed by `=` or `:` and a value; `==` and `=>` are not
+assignment delimiters for this rule. Quoted field names, JSON,
+minified text and an `export` declaration are supported. Prose such as “the
+token expired today” has no assignment and never matches.
+
+- Quoted values use matching single/double quotes or backticks, with escaped
+  delimiters and other quote types inside. Values cannot cross a line break;
+  written escapes are inspected without decoding. A missing closing quote at
+  end of input is conservatively treated as a candidate, including when a CLI
+  reply was cut at its display cap.
+- Unquoted values extend to end of line or the first whitespace or `#` comment.
+  An empty assignment never consumes an unquoted field from the following line;
+  quoted literals may still follow assignment whitespace across a line break.
+  Only the value is masked, never its surrounding assignment or whole line.
+- Scan, history masking and report validation keep the 9-character minimum.
+  CLI reply display also masks shorter named credential values; 8 characters
+  or fewer use bullets.
+
+Values starting with `process.env` or `os.environ` (followed by a word boundary
+or `[`), or with `${`, `{{` or `<`, are ignored as reads/templates. Values exactly
+`null`, `undefined`, `true` or `false` are ignored case-insensitively. These
+ignores apply to quoted and unquoted values. Trailing commas/semicolons are
+removed only to classify these references, not from a reported value.
+
+For unquoted values only, a bare identifier made entirely of letters, with no
+digits or punctuation, is a reference, as in `token = getToken`. Function calls
+beginning with an identifier or a dotted identifier and `(` are also ignored,
+as in `password = getPassword()`. Quoted alphabetic strings and quoted strings
+that look like function calls remain literal candidates, subject to the other
+ignores. The original placeholder rules above still apply. These choices keep
+code that reads a credential from being reported as a stored literal one.
+
 ## Output and limits
 
 Every hit uses first 3 characters + `…` + last 4 plus length, such as
@@ -54,8 +99,18 @@ Never print or store the original value in findings, reports or review notes.
 
 `scan <run-id>` reads only that guarded run's `copy`. A hit is
 `<relative file>:<line>  <pattern name>  <masked value>`. `.git` is skipped for
-C02, binaries are skipped, symbolic links are not followed, and each file is
-capped at 1 MiB. A plain note names every size skip. `No secrets found` with
+C02, binaries are detected per window, and symbolic links are not followed.
+Text files up to 20 MiB are read in 1 MiB windows with at most 4 KiB of overlap,
+starting on a complete UTF-8 character. Hits repeated
+in overlap are emitted once, with line numbers relative to the whole file.
+Files above 20 MiB are skipped with the plain note
+`Skipped for size (over 20 MiB): <file>`. Invalid UTF-8 or binary content in a
+later window discards that file's pending hits; partial file results are not
+published. If an unfinished secret candidate crosses a window boundary and
+starts before the retained overlap, the whole file is marked incomplete with
+`Skipped long boundary-spanning match (over 4 KiB overlap): <file>` instead of
+printing a truncated value. Treat a skipped file as untested.
+`No secrets found` with
 exit 0 means only that the inspected text had no matching candidate; it does not
 erase skip notes or certify the project.
 

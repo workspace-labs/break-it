@@ -4,7 +4,79 @@ import path from 'node:path';
 import { readSeal } from './runs.mjs';
 import { findSecrets, maskValue, safeLabel } from './leaks.mjs';
 
-const fileLimit = 1024 * 1024;
+const windowSize = 1024 * 1024;
+const overlapSize = 4 * 1024;
+const fileLimit = 20 * windowSize;
+
+function retainedTail(text) {
+  const bytes = Buffer.from(text);
+  let start = Math.max(0, bytes.length - overlapSize);
+  // The overlap begins on a complete UTF-8 character, never a continuation byte.
+  while (start < bytes.length && (bytes[start] & 0xc0) === 0x80) start++;
+  return bytes.subarray(start).toString('utf8');
+}
+
+async function scanFile(file, relative) {
+  const label = safeLabel(relative);
+  const sizeNote = `Skipped for size (over 20 MiB): ${label}`;
+  const handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+  const lines = [];
+  let reportedSpans = [];
+  const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+  let position = 0;
+  let carried = '';
+  let characterBase = 0;
+  let lineBase = 1;
+  try {
+    if ((await handle.stat()).size > fileLimit) return { lines: [sizeNote], found: false };
+    while (position < fileLimit) {
+      const buffer = Buffer.alloc(Math.min(windowSize, fileLimit - position));
+      let size = 0;
+      while (size < buffer.length) {
+        const read = await handle.read(buffer, size, buffer.length - size, position + size);
+        if (!read.bytesRead) break;
+        size += read.bytesRead;
+      }
+      position += size;
+      const final = size < buffer.length || position >= (await handle.stat()).size;
+      let decoded;
+      try { decoded = decoder.decode(buffer.subarray(0, size), { stream: !final }); }
+      catch { return { lines: [], found: false }; }
+      // Validate every read window. The decoder retains incomplete UTF-8 bytes.
+      if (/[\x00-\x08\x0e-\x1f]/.test(decoded)) return { lines: [], found: false };
+      const text = carried + decoded;
+      const tail = final ? '' : retainedTail(text);
+      const tailStart = text.length - tail.length;
+      const nextBase = characterBase + tailStart;
+      const nextSpans = reportedSpans.filter(span => span.end > nextBase);
+      for (const hit of findSecrets(text)) {
+        if (!final && hit.index + hit.value.length === text.length) {
+          // Never publish a truncated value. The next window supplies its end.
+          if (hit.index < tailStart) {
+            return { lines: [`Skipped long boundary-spanning match (over 4 KiB overlap): ${label}`], found: false };
+          }
+          continue;
+        }
+        const absoluteIndex = characterBase + hit.index;
+        const absoluteEnd = absoluteIndex + hit.value.length;
+        // An overlap may lose an assignment's name and rediscover an inner
+        // provider token. Retain spans, not just starts, across that boundary.
+        if (reportedSpans.some(span => absoluteIndex < span.end && absoluteEnd > span.start)) continue;
+        if (absoluteEnd > nextBase) nextSpans.push({ start: absoluteIndex, end: absoluteEnd });
+        lines.push(`${label}:${lineBase + hit.line - 1}  ${hit.pattern}  ${maskValue(hit.value)}`);
+      }
+      if (final) break;
+      for (let i = 0; i < tailStart; i++) if (text[i] === '\n') lineBase++;
+      characterBase += tailStart;
+      carried = tail;
+      // Only evidence intersecting the retained overlap is needed next time.
+      reportedSpans = nextSpans;
+    }
+    // A growing file is still bounded, and no partial results escape this file.
+    if ((await handle.stat()).size > fileLimit) return { lines: [sizeNote], found: false };
+    return { lines, found: lines.length > 0 };
+  } finally { await handle.close(); }
+}
 
 export async function scanRun(id) {
   const { dir } = await readSeal(id);
@@ -27,35 +99,12 @@ export async function scanRun(id) {
         await walk(file, relative + '/');
       } else if (stat.isFile()) {
         if (stat.size > fileLimit) {
-          lines.push(`Skipped for size (over 1 MiB): ${safeLabel(relative)}`);
+          lines.push(`Skipped for size (over 20 MiB): ${safeLabel(relative)}`);
           continue;
         }
-        const handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
-        let buffer;
-        let oversized;
-        try {
-          // Bounded even if a file grows between stat and read.
-          buffer = Buffer.alloc(fileLimit);
-          let size = 0;
-          while (size < buffer.length) {
-            const read = await handle.read(buffer, size, buffer.length - size, size);
-            if (!read.bytesRead) break;
-            size += read.bytesRead;
-          }
-          buffer = buffer.subarray(0, size);
-          oversized = (await handle.stat()).size > fileLimit;
-        } finally { await handle.close(); }
-        if (oversized) {
-          lines.push(`Skipped for size (over 1 MiB): ${safeLabel(relative)}`);
-          continue;
-        }
-        const text = buffer.toString('utf8');
-        // NUL/control bytes and malformed UTF-8 identify non-text content.
-        if (/[\x00-\x08\x0e-\x1f]/.test(text) || !Buffer.from(text).equals(buffer)) continue;
-        for (const hit of findSecrets(text)) {
-          found = true;
-          lines.push(`${safeLabel(relative)}:${hit.line}  ${hit.pattern}  ${maskValue(hit.value)}`);
-        }
+        const result = await scanFile(file, relative);
+        for (const line of result.lines) lines.push(line);
+        found ||= result.found;
       }
     }
   }

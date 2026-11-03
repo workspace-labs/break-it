@@ -94,7 +94,9 @@ local without code changes, stop and explain the blocker. These reviewer checks
 are essential: the CLI does not intercept arbitrary app network traffic.
 
 Leaks are inspected only in the copy. Use `scan` for files and copy-local logs;
-pipe copy-local git history directly into `mask` without displaying or saving raw
+it reads text in bounded 1 MiB windows with 4 KiB overlap, up to 20 MiB per file,
+and names files above that cap as skipped. It never follows a symbolic link.
+Pipe copy-local git history directly into `mask` without displaying or saving raw
 history. Never send a candidate key to a provider to check it. Mask before any
 output or evidence storage, including local notes; keeping a secret on this
 computer is still a leak. Use field names rather than copying private reply data.

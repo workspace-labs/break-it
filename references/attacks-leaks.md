@@ -1,5 +1,14 @@
 # Family C: Leaks
 
+## Contents
+
+- [C01: Secrets in files](#c01-secrets-in-files)
+- [C02: Secrets in git history](#c02-secrets-in-git-history)
+- [C03: Replies that say too much](#c03-replies-that-say-too-much)
+- [C04: Errors that say too much](#c04-errors-that-say-too-much)
+- [C05: Logs that keep private data](#c05-logs-that-keep-private-data)
+- [Safe control](#safe-control)
+
 Use only on the owner's throwaway copy, with invented local accounts and data.
 Never test whether a key works against its provider. A working-looking secret is
 enough to report; the pattern scanner cannot prove validity. Read
@@ -92,8 +101,11 @@ control remains unflagged. The filename alone grants no exemption: a real-lookin
 secret in `.env.example` is still a C01 finding. Do not exempt a long value merely
 because the word EXAMPLE appears inside it.
 
-The scanner skips `.git`, binaries and files larger than 1 MiB, and never follows
-symbolic links. Disclose incomplete coverage; use C02 for history. Split,
+The scanner skips `.git`, binaries and files larger than 20 MiB, and never follows
+symbolic links. Larger eligible files are read in 1 MiB windows with 4 KiB overlap;
+overlap hits appear once with their actual line numbers. Disclose incomplete
+coverage, including a named skip for an unfinished candidate longer than the
+boundary overlap; the scanner never reports a truncated value. Use C02 for history. Split,
 encoded or custom secret formats can escape this small pattern list, so a clean
 scan never proves the absence of every possible leak. Keep each completed
 logical try's outcome and all counts honest. Break-it supplies advice, never fixes.

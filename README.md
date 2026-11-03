@@ -83,12 +83,22 @@ Mode requirement and suggests `--skip`; it never copies the target instead.
 
 Run `scan` before starting the copy and again after the tries. It checks files
 inside that run's copy, including app-written logs; `.git`, binaries and symbolic
-links are skipped, and files larger than 1 MiB get a named skip note. Output has
-only the relative filename, line, pattern name and masked value. No matches means
+links are skipped. Text files up to 20 MiB are read in 1 MiB windows with 4 KiB
+overlap, so a key near a window boundary is reported once with its actual line.
+Files larger than 20 MiB get a named skip note. A candidate too long to retain
+across a window boundary also makes that file a named skip, rather than showing
+a truncated value. Treat skipped files as untested. Output has only the relative
+filename, line, pattern name and masked value. No matches means
 `No secrets found` with exit 0 for the inspected text, not proof of complete safety.
 See [the exact patterns and limits](references/leak-patterns.md). Documented
 placeholders such as `.env.example` with `KEY=your-key-here` stay unflagged; that
 filename does not excuse a real-looking secret.
+
+The shared generic rule recognizes quoted or unquoted `.env`, configuration and
+header assignments, including names such as `DB_PASSWORD`, `client_secret`,
+`accessToken` and `apiKey`. Code that reads an environment variable, template
+references, placeholders and prose without an assignment are ignored. The same
+rule protects history masking and report evidence; see the exact rules above.
 
 For C02, read the copy's history with plain git and pipe it straight into `mask`:
 

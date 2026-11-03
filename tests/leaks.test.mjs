@@ -86,7 +86,7 @@ test('C01 scan skips git internals, binary files and oversized files, naming the
   await mkdir(path.join(p, '.git'));
   await writeFile(path.join(p, '.git', 'old.txt'), `token = "${values[0]}"`);
   await writeFile(path.join(p, 'image.bin'), Buffer.concat([Buffer.from([0, 1, 2]), Buffer.from(`secret = "${values[1]}"`)]));
-  await writeFile(path.join(p, 'large.log'), `password = "${values[2]}"\n` + 'a'.repeat(2 * 1024 * 1024));
+  await writeFile(path.join(p, 'large.log'), `password = "${values[2]}"\n` + 'a'.repeat(25 * 1024 * 1024));
   const run = newRun(t, p);
   const result = cli('scan', run.id);
   assert.equal(result.status, 0, 'scan succeeds');

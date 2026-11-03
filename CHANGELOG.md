@@ -13,6 +13,13 @@
 - Extend the synthetic shop and real two-round demo with file, reply and error
   leaks, keeping the answer key outside the app and the placeholder unflagged.
 - Preserve reviewer-only use, the copy/localhost walls and approved docs unchanged.
+- Fix round 1 (2026-11-04): recognize unquoted credentials and sensitive words
+  inside prefixed, separated or camelCase names across scan, history masking and
+  the report guard; ignore secret-reading expressions and placeholder references.
+- Fix round 1 (2026-11-04): scan eligible text files through 20 MiB in 1 MiB
+  windows with 4 KiB overlap, deduplicating boundary hits and retaining real line
+  numbers; name files above the cap or with an unfinished candidate beyond the
+  retained boundary overlap as skipped. Version remains 0.3.0.
 
 ## [0.2.0] - 2026-11-03
 
