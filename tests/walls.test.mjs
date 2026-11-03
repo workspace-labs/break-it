@@ -12,7 +12,10 @@ test('W7 skill and references contain no banned command words or shell shortcuts
   for (const { file, text } of await instructions()) {
     assert.doesNotMatch(text, /\b(?:rm|sudo)\b|curl\s*[^\n]*\|\s*sh\b|git\s+push\s+[^\n]*(?:--force|-f\b)/i, file);
     const commands = text.split('\n').filter(line => /^\s*(?:node|npm|npx|python|bash|sh|git|cd)\s/.test(line));
-    for (const command of commands) assert.match(command.trim(), /^node scripts\/break-it\.mjs (?:check|copy|seal|cleanup|report|send)\b/, file);
+    for (const command of commands) {
+      if (command.trim() === 'git -C "<copy>" log -p --all --no-color | node scripts/break-it.mjs mask') continue;
+      assert.match(command.trim(), /^node scripts\/break-it\.mjs (?:check|copy|seal|cleanup|report|send|scan|mask)\b/, file);
+    }
   }
 });
 test('W2 and W4 reviewer instructions prohibit real startup, repairs and gate moves', async () => {

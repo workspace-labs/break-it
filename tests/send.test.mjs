@@ -62,6 +62,19 @@ test('send makes one request with the chosen method, raw JSON and bearer token',
     token: 'Bearer synthetic-token', type: 'application/json' }]);
 });
 
+test('C03 send masks response credentials, including short values, while keeping the response cap', async t => {
+  const values = ['tinyPass', 'local-test-response-0123456789', `ghp_${'R'.repeat(36)}`];
+  const url = await server(t, (req, res) => {
+    res.end(JSON.stringify({ password: values[0], passwordHash: values[1], api_key: values[2] }));
+  });
+  const result = await send('GET', url);
+  assert.equal(result.status, 0);
+  for (const value of values) assert.ok(!result.stdout.includes(value), 'whole synthetic credential is absent');
+  assert.match(result.stdout, /•••• \(8 chars\)/);
+  assert.match(result.stdout, /loc…6789 \(\d+ chars\)/);
+  assert.ok(Buffer.byteLength(result.stdout.split('\n').slice(1).join('\n').trimEnd()) <= 2048);
+});
+
 test('send accepts localhost without resolving an external address', async t => {
   let count = 0;
   const url = await server(t, (req, res) => { count++; res.end('local'); });

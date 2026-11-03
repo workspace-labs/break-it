@@ -3,6 +3,19 @@ import path from 'node:path';
 import { runPath, validId } from './runs.mjs';
 import { verifySeal } from './seal.mjs';
 import { loadReceipt, deleteReceipt } from './receipts.mjs';
+import { findSecrets, safeLabel } from './leaks.mjs';
+
+function guardSecrets(value, id) {
+  if (typeof value === 'string' && findSecrets(value).length) {
+    throw new Error(`Refused: finding ${safeLabel(id)} contains an unmasked secret; use the masked form.`);
+  }
+  if (value && typeof value === 'object') {
+    for (const [key, item] of Object.entries(value)) {
+      guardSecrets(key, id);
+      guardSecrets(item, id);
+    }
+  }
+}
 
 function text(value, field) {
   if (typeof value !== 'string' || !value.trim() || /[\r\n\x00-\x1f\x7f]/.test(value)) {
@@ -10,6 +23,13 @@ function text(value, field) {
   }
 }
 export function validateFindings(data) {
+  for (const finding of Array.isArray(data?.findings) ? data.findings : []) {
+    guardSecrets(finding, typeof finding?.id === 'string' ? finding.id : 'unknown');
+  }
+  for (const skipped of Array.isArray(data?.skipped) ? data.skipped : []) {
+    guardSecrets(skipped, typeof skipped?.id === 'string' ? skipped.id : 'skipped');
+  }
+  guardSecrets(data?.project, 'project');
   text(data.project, 'project');
   if (!Number.isSafeInteger(data.round) || data.round < 1) throw new Error('Refused: round must be a positive integer.');
   if (!Array.isArray(data.findings)) throw new Error('Refused: findings must be a list.');
@@ -62,7 +82,7 @@ export async function reportRun(id, data) {
   const { receipt, identity } = await loadReceipt(id);
   validateReceipt(receipt, id);
   await verifySeal(receipt);
-  const header = data.round === 1 ? `BREAK-IT REPORT ${data.project} · version 0.2.0` : `ROUND ${data.round} ${data.project}`;
+  const header = data.round === 1 ? `BREAK-IT REPORT ${data.project} · version 0.3.0` : `ROUND ${data.round} ${data.project}`;
   const { tried, blocked, gotThrough } = data.attacks;
   const lines = [header, 'Seal: real project unchanged', `Attacks: ${tried} tried   ${blocked} blocked   ${gotThrough} got through`];
   const sorted = [...data.findings].sort((a, b) => Number(b.severity === 'CRITICAL') - Number(a.severity === 'CRITICAL'));
@@ -76,8 +96,10 @@ export async function reportRun(id, data) {
     if (!causes.has(location)) causes.set(location, []);
     causes.get(location).push(finding.id);
   }
+  let firstCause = true;
   for (const [location, ids] of causes) {
     if (ids.length < 2) continue;
+    if (firstCause) { lines.push(''); firstCause = false; }
     const shared = ids.length === 2 ? 'both' : `all ${ids.length === 3 ? 'three' : ids.length}`;
     lines.push(`Same cause: ${ids.join(', ')} point to ${location}; one fix may close ${shared}.`);
   }
