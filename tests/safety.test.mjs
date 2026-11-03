@@ -14,7 +14,7 @@ for (const url of ['https://example.com', 'http://192.168.1.5', 'http://localhos
     assert.match(result.stderr, /Refused: break-it only attacks a local copy, never a live site\./);
   });
 }
-for (const p of [homedir(), '/', 'C:\\', '\\\\server\\share']) {
+for (const p of [homedir(), '/', 'C:\\', '\\\\server\\share', '/etc']) {
   test(`W1 refuses dangerous path ${p}`, () => assert.notEqual(cli('check', p).status, 0));
 }
 for (const host of ['localhost', '127.0.0.1', '[::1]']) {
@@ -79,3 +79,19 @@ test('W5 cleanup refuses a run redirected outside the base through a symlink', a
   assert.notEqual(cli('cleanup', id).status, 0);
   assert.equal(await readFile(path.join(p, 'hello.txt'), 'utf8'), 'original');
 });
+for (const kind of ['missing', 'corrupt']) {
+  test(`W5 cleanup recovers a run with ${kind} metadata without issuing a receipt`, async t => {
+    const p = await project(t);
+    const run = newRun(t, p);
+    const sibling = newRun(t, p);
+    const file = path.join(run.dir, 'seal.json');
+    if (kind === 'missing') await unlink(file);
+    else await writeFile(file, 'not JSON');
+    const result = cli('cleanup', run.id);
+    assert.notEqual(result.status, 0);
+    assert.doesNotMatch(result.stdout, /Receipt:/);
+    await assert.rejects(lstat(run.dir), { code: 'ENOENT' });
+    assert.ok((await lstat(sibling.copy)).isDirectory());
+    assert.equal(await readFile(path.join(p, 'hello.txt'), 'utf8'), 'original');
+  });
+}

@@ -23,9 +23,15 @@ export async function checkTarget(input, url) {
   const system = new Set(['/', '/System', '/Library', '/Applications', '/Users', '/Volumes',
     '/private', '/private/var', '/usr', '/etc', '/var', '/bin', '/sbin', '/opt',
     'C:\\Windows', 'C:\\Program Files', 'C:\\Program Files (x86)', 'C:\\Users']);
+  if (process.platform === 'win32') {
+    for (const folder of ['Windows', 'Program Files', 'Program Files (x86)', 'Users']) {
+      system.add(path.join(path.parse(resolved).root, folder));
+    }
+  }
+  const canonicalSystem = await Promise.all([...system].map(p => realpath(p).catch(() => p)));
   const equal = (a, b) => process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
   if (equal(resolved, home) || equal(resolved, path.parse(resolved).root) ||
-      [...system].some(p => equal(resolved, p))) throw new Error('Refused: home and system folders are not projects.');
+      canonicalSystem.some(p => equal(resolved, p))) throw new Error('Refused: home and system folders are not projects.');
   if (!(await stat(resolved)).isDirectory()) throw new Error('Refused: target must be a folder.');
   return resolved;
 }

@@ -10,9 +10,13 @@ export async function removeRun(id) {
   throw new Error('Refused: run folder still exists after cleanup.');
 }
 export async function cleanupRun(id) {
-  const { data } = await readSeal(id);
+  await runPath(id);
+  let data;
   let failure;
-  try { await verifySeal(data); } catch (error) { failure = error; }
+  try {
+    ({ data } = await readSeal(id));
+    await verifySeal(data);
+  } catch (error) { failure = error; }
   await removeRun(id);
   if (failure) {
     failure.message += '\nCopy deleted. No report receipt: the seal did not pass.';
