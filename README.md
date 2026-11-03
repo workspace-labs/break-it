@@ -35,8 +35,8 @@ then tests a fresh copy again. Nothing in your real project is changed.
 ## The walls
 
 - Your own local project only, used by an independent reviewer.
-- Attack only a throwaway copy. Source links and special files are refused.
-- A fingerprint checks every real file, including files skipped in the copy.
+- Attack only a throwaway copy. Links must stay inside it; special files are refused.
+- A fingerprint checks every real file and link, including skipped folders.
 - Reports contain advice. No real code edits, status moves or owner gate actions.
 - Stop the app you started, then let the CLI delete only that run folder.
 - Keep data and app integrations local; the CLI makes no network calls.
@@ -63,11 +63,21 @@ node scripts/break-it.mjs report RUN_ID "FINDINGS_FILE.json"
 `break-it/<run-id>/copy`. Default: copy every file. Optional `copy ... --skip`
 excludes directories named node_modules, .git, dist, build, out, coverage and
 .next; the real seal still covers them. Missing files or changed bytes make
-`seal` exit 3 with **REAL PROJECT CHANGED** and the affected filenames.
+`seal` exit 3 with **REAL PROJECT CHANGED** and the affected filenames. The seal
+records link text without following it. Copy preserves safe relative links;
+absolute links, links leading outside the project, and links whose targets cannot
+be resolved are refused by name. Links inside skipped folders are only sealed.
+If Windows cannot create a link, the refusal explains the permission or Developer
+Mode requirement and suggests `--skip`; it never copies the target instead.
 
-After stopping your app, run seal, then cleanup. Save cleanup's `Receipt:` value
-into your findings file as described in [the report format](references/report-format.md).
-Report checks that the run is gone and the real project is still unchanged.
+After stopping your app, run seal, then cleanup. Cleanup prints only the path of
+a receipt file under `break-it/receipts` in your OS temporary directory, outside
+the deleted run. Report finds it by run id, checks that the run is gone and the
+real project is still unchanged, then deletes the receipt after success. The
+agent never has to carry a large receipt or put it in findings. Failed reports
+keep it so corrected findings can be retried. See [the report format](references/report-format.md).
+If you abandon a pending report after its run is gone, use cleanup with the same
+run id to delete only that receipt. Empty shared temporary folders may remain.
 Keep findings outside both source and run so they do not change the seal or get
 deleted. Cleanup on a changed source removes its own copy but exits 3 with no
 report receipt. Preserve the alarm; never turn it into a clean report.
@@ -76,7 +86,8 @@ The CLI is a safety shell, not an automatic scanner of arbitrary apps. The agent
 adapts only the two bounded [bad-user](references/attacks-bad-user.md) and
 [access-control](references/attacks-other-data.md) try lists to the intended change.
 Count completed tries, including safe controls; disclose skipped or inconclusive
-tries in review notes. A passing run proves only what was tried.
+tries in review notes. A report needs at least one completed logical try.
+A passing run proves only what was tried.
 
 ## Example: another customer's order
 
@@ -91,21 +102,21 @@ Seal: real project unchanged
 Attacks: 4 tried   1 blocked   3 got through
 
 CRITICAL  Other people's orders are open
-  Tried Logged in as user A, opened /orders/6 (user B's order)
-  Saw User B's order, item and example delivery address
-  Where server.mjs:68
+  Tried  Logged in as user A, opened /orders/6 (user B's order)
+  Saw    User B's order, item and example delivery address
+  Where  server.mjs:68
   Advice Show an order only to the user who owns it
 
 SMALL  Empty input crashes one request
-  Tried Submitted empty text to /echo
-  Saw HTTP 500; the server remained alive
-  Where server.mjs:57
+  Tried  Submitted empty text to /echo
+  Saw    HTTP 500; the server remained alive
+  Where  server.mjs:57
   Advice Reject empty text with a clear validation message before processing it
 
 SMALL  No limit on login tries
-  Tried Sent 50 wrong logins for synthetic user B, sequentially on localhost
-  Saw All 50 answered without a retry limit
-  Where server.mjs:33
+  Tried  Sent 50 wrong logins for synthetic user B, sequentially on localhost
+  Saw    All 50 answered without a retry limit
+  Where  server.mjs:33
   Advice Apply a bounded retry limit and a clear retry-later response
 
 Copy deleted. Nothing left behind. Break-it changed no code.

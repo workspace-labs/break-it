@@ -17,16 +17,21 @@ eligible. A localhost address alone does not prove it is your throwaway app.
 
 Start the app and send every try only from/against the run's `copy` folder.
 Use the source path only as input to the CLI's check/copy operation. Never launch
-the real project, and never edit code in either source or copy. Symlinks and
-special files are refused so a copied link cannot reach back into original data.
-Do not bypass this refusal. Isolate local test data as well as application files.
+the real project, and never edit code in either source or copy. A copied symbolic
+link must retain its relative text and resolve within the project; absolute,
+escaping, or unresolvable links are refused by name. A link is never followed to
+copy its target. Skipped folders, including their links, are sealed but not copied
+or checked for copy eligibility. Special files remain refused. Windows link
+creation failures explain permissions/Developer Mode and suggest `--skip`;
+never substitute target copying. Isolate local test data as well as app files.
 
 ## W3: Seal before report
 
 Copy fingerprints every real file with SHA-256, including files omitted by
-`--skip`. Stop your app, then run `seal` before cleanup and report. An added,
-changed, or deleted real file produces exit 3 and `REAL PROJECT CHANGED` with the
-file names. Stop and inform the owner. Never issue an unchanged/clean report for
+`--skip`. It records each symbolic link as a distinct link-text entry without
+following it. Stop your app, then run `seal` before cleanup and report. An added,
+changed, or deleted file or link produces exit 3 and `REAL PROJECT CHANGED` with
+the names. Stop and inform the owner. Never issue an unchanged/clean report for
 that run. Reporting rechecks the receipt's fingerprint after cleanup too.
 
 ## W4: Report only
@@ -46,10 +51,16 @@ node scripts/break-it.mjs cleanup <run-id>
 
 It may delete only its own run folder after proving the resolved path is inside
 the OS temp directory's `break-it` folder. It refuses outside paths and symlink
-traps and leaves sibling runs alone. Confirm the folder is gone. Keep the cleanup
-receipt with the intentional findings/report output outside the run; it allows
-the report to be generated after the temporary folder has gone. On an interrupted
-run, stop your process and use the same cleanup command. Never improvise deletion.
+traps and leaves sibling runs alone. Confirm the folder is gone. The CLI stores a
+receipt outside that run at `break-it/receipts/<run-id>.json`, with the same
+symlink checks as the temporary base. Cleanup prints only its path. Report reads
+it by run id and deletes the receipt after successful validation; only then can
+the report say nothing is left behind. A failed report retains the receipt for a
+retry. No receipt body belongs in findings JSON. On an interrupted run, stop your
+process and use the same cleanup command. If the run is already gone and you
+abandon its pending report, cleanup with that run id deletes only its guarded
+receipt. Empty shared base/receipts folders may remain, with no per-run data.
+Never improvise deletion.
 
 ## W6: Nothing leaves this computer
 

@@ -2,10 +2,13 @@
 
 Use the CLI's real output. Save findings outside both the source and temporary
 run folder. Stop the app, pass `seal`, then run `cleanup` before `report`, in that
-order. Cleanup prints `Receipt:` followed by base64url JSON. Decode it through
-Node's `Buffer.from(text, 'base64url')`, parse the JSON, and put that object in
-`receipt`. Report requires the run folder to be gone and checks the real project
-fingerprint again. A changed fingerprint stops reporting.
+order. Cleanup prints a short `Receipt file:` path, never the receipt body. The
+CLI stores that JSON at `break-it/receipts/<run-id>.json` under the guarded OS
+temporary base, outside the deleted run. Report reads it by run id; do not add a
+`receipt` field to findings or decode anything. Report requires the run folder
+to be gone, checks the real fingerprint again, and deletes the receipt after
+successful validation. A changed fingerprint stops reporting. Failed reports
+keep the receipt so corrected findings can be retried.
 
 ## Findings JSON contract
 
@@ -24,20 +27,19 @@ fingerprint again. A changed fingerprint stops reporting.
       "Where": "server.mjs:42",
       "Advice": "Show an order only to the user who owns it"
     }
-  ],
-  "receipt": {}
+  ]
 }
 ```
 
-The empty receipt above is a schema placeholder, never a valid receipt. Use only
-the decoded value printed by your own completed cleanup. `Where` is the actual
-relative source file and positive line number from the tested copy; the example
-line number is illustrative. Do not put an absolute personal path in a report.
+`Where` is the actual relative source file and positive line number from the
+tested copy; the example line number is illustrative. Do not put an absolute
+personal path in a report.
 
 Every finding needs a nonempty id, title, **Tried**, **Saw**, **Where**, **Advice**
 and a severity of **CRITICAL** or **SMALL**. Report rejects missing evidence rather
 than filling it in. State the observed effect and test boundary without private
 values. The counts are nonnegative whole numbers: tried = blocked + gotThrough.
+At least one completed logical try is required; a zero-try report is refused.
 Each got-through logical try has one finding; findings.length = gotThrough.
 Skipped or incomplete tries are not counted as blocked. A reported hole can be
 associated with a previously reported hole in the review notes without losing its
@@ -51,17 +53,19 @@ Seal: real project unchanged
 Attacks: 2 tried   1 blocked   1 got through
 
 CRITICAL  Other people's orders are open
-  Tried Logged in as user A and opened user B's local test order
-  Saw The response contained B's invented order details
-  Where server.mjs:42
+  Tried  Logged in as user A and opened user B's local test order
+  Saw    The response contained B's invented order details
+  Where  server.mjs:42
   Advice Show an order only to the user who owns it
 
 Copy deleted. Nothing left behind. Break-it changed no code.
 ```
 
-CRITICAL findings precede SMALL findings. The footer is emitted only after
-cleanup has succeeded. The report is a record of the tries completed, never a
-claim that all possible holes have been ruled out.
+CRITICAL findings precede SMALL findings. The labels occupy six characters, with
+one separating space, so every value begins at the same column. The footer is
+emitted only after cleanup succeeded and report removed its receipt. The report
+is a record of the tries completed, never a claim that all possible holes have
+been ruled out.
 
 ## After the builder's fix
 

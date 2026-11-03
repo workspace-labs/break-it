@@ -29,8 +29,13 @@ the app's working folder separately. Do not install tools or dependencies.
    through Node, never assume a platform-specific path.
 3. Copy includes all files by default. Use `node scripts/break-it.mjs copy <owned-project> --skip` only when
    the owner chooses to omit dependency/build folders. The seal still covers every
-   real file. Symbolic links and special files are refused, including links inside
-   dependency folders. Stop on a refusal; do not bypass it.
+   real file and records each symbolic link's text without following it. The copy
+   recreates a link with the same relative text only if its resolved target stays
+   inside the project. Absolute, escaping, and unresolvable links are refused by
+   name; special files are also refused. Links inside skipped folders are sealed
+   but never copied or validated for copying. If Windows cannot create a link,
+   the refusal explains its permissions/Developer Mode requirement and suggests
+   `--skip`. Stop on a refusal; do not bypass it or copy the link's target instead.
 
 ## Part 2: Attack the copy
 
@@ -73,18 +78,23 @@ the app's working folder separately. Do not install tools or dependencies.
    node scripts/break-it.mjs cleanup <run-id>
    ```
 
-   Confirm it says the run is gone. Capture its `Receipt:` value. Decode the
-   base64url text as `JSON.parse(Buffer.from(receiptText, 'base64url').toString('utf8'))`
-   using Node and put the decoded object in the findings JSON's `receipt` field.
-   Save that JSON **outside both the real project and run folder**. This receipt is
-   report evidence, not another temporary run folder.
+   Confirm it says the run is gone. It prints only a short `Receipt file:` path;
+   the CLI keeps the receipt under the guarded temporary `break-it/receipts`
+   folder, outside the deleted run. Do not read, decode, or carry the receipt
+   into findings. Save findings JSON **outside both the real project and run
+   folder**, with at least one completed logical try and no `receipt` field.
 4. Read [the report format](references/report-format.md), then generate the report:
 
    ```text
    node scripts/break-it.mjs report <run-id> <findings.json>
    ```
 
-   Report checks the real fingerprint again and requires the run to be gone.
+   Report finds the receipt by run id, checks the real fingerprint again, requires
+   the run to be gone, and deletes the receipt after successful validation. Only
+   then does its footer say nothing is left behind. A failed report keeps the
+   receipt so you can correct the findings and retry; never claim that it finished.
+   If you abandon that pending report, use cleanup with the same run id to delete
+   only its guarded receipt. Empty shared temporary folders may remain.
    Never fabricate a receipt, seal result, attack count, or observation. If any
    step fails, report the failure plainly and do not claim a completed clean run.
 
