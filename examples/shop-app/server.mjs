@@ -2,7 +2,7 @@ import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 
 // All people, credentials and orders below are synthetic teaching data.
-const users = { A: 'demo-a', B: 'demo-b', admin: 'demo-admin' };
+const users = { A: 'example-a', B: 'example-b', admin: 'example-admin' };
 const orders = {
   '1': { id: '1', owner: 'A', item: 'Notebook' },
   '6': { id: '6', owner: 'B', item: 'Lamp', address: '6 Example Lane' }
@@ -29,8 +29,7 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     if (req.method === 'POST' && url.pathname === '/login') {
       const data = await body(req);
-      // PLANTED HOLE: A09
-      const limited = false; // demo builder replaces this line in its scratch source
+      const limited = false;
       const count = attempts.get(data.user) || 0;
       if (limited && count >= 5) return send(res, 429, { error: 'Try later' });
       if (!users[data.user] || data.password !== users[data.user]) {
@@ -49,8 +48,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && url.pathname === '/echo') {
       const data = await body(req);
-      // PLANTED HOLE: A01
-      const validateEmpty = false; // demo builder replaces this line in its scratch source
+      const validateEmpty = false;
       if (validateEmpty && (typeof data.text !== 'string' || !data.text.trim())) {
         return send(res, 400, { error: 'Text required' });
       }
@@ -64,15 +62,13 @@ const server = http.createServer(async (req, res) => {
       if (match[1] === 'safe-orders') {
         if (order.owner !== user) return send(res, 403, { error: 'Not your order' });
       } else {
-        // PLANTED HOLE: B01
-        const requireOwner = false; // demo builder replaces this line in its scratch source
+        const requireOwner = false;
         if (requireOwner && order.owner !== user) return send(res, 403, { error: 'Not your order' });
       }
       return send(res, 200, order);
     }
     send(res, 404, { error: 'No such route' });
   } catch {
-    // Request-scoped crash: process survives and no stack is returned. SMALL, not CRITICAL.
     send(res, 500, { error: 'Request failed' });
   }
 });

@@ -1,4 +1,4 @@
-# Break-it · 0.1.0
+# Break-it · 0.2.0
 
 ![break-it: find the hole a hacker would find, first](media/break-it-hero.png)
 
@@ -41,7 +41,7 @@ then tests a fresh copy again. Nothing in your real project is changed.
 - A fingerprint checks every real file and link, including skipped folders.
 - Reports contain advice. No real code edits, status moves or owner gate actions.
 - Stop the app you started, then let the CLI delete only that run folder.
-- Keep data and app integrations local; the CLI makes no network calls.
+- Keep data and app integrations local; `send` makes one bounded localhost request.
 - Run the portable Node commands. No downloaded tools or dependencies.
 
 A copy is not an operating-system sandbox. Before starting any real app, verify
@@ -56,6 +56,8 @@ Run from the skill folder. Quote paths containing spaces on either platform.
 ```text
 node scripts/break-it.mjs check "PROJECT_FOLDER" --url http://localhost:4000
 node scripts/break-it.mjs copy "PROJECT_FOLDER"
+node scripts/break-it.mjs send POST http://localhost:4000/login --json '{"user":"A","password":"invented"}'
+node scripts/break-it.mjs send GET http://localhost:4000/orders/6 --token LOCAL_TEST_SESSION
 node scripts/break-it.mjs seal RUN_ID
 node scripts/break-it.mjs cleanup RUN_ID
 node scripts/break-it.mjs report RUN_ID "FINDINGS_FILE.json"
@@ -71,6 +73,14 @@ absolute links, links leading outside the project, and links whose targets canno
 be resolved are refused by name. Links inside skipped folders are only sealed.
 If Windows cannot create a link, the refusal explains the permission or Developer
 Mode requirement and suggests `--skip`; it never copies the target instead.
+
+Use `send` for each try and control request against that copy's port. Each command
+sends exactly one request, with a 5-second deadline and no redirects or retries.
+`--json` sends the supplied text as-is (including deliberately malformed JSON);
+the entire UTF-8 body, including its JSON envelope, must fit within 64 KiB.
+`--token` adds a disposable local bearer session. Output is the HTTP status and
+up to 2 KiB of response body, with `(cut)` when truncated. A timeout or unseen
+response content is inconclusive, never evidence of a hole by itself.
 
 After stopping your app, run seal, then cleanup. Cleanup prints only the path of
 a receipt file under `break-it/receipts` in your OS temporary directory, outside
@@ -89,8 +99,10 @@ report receipt. Preserve the alarm; never turn it into a clean report.
 The CLI is a safety shell, not an automatic scanner of arbitrary apps. The agent
 adapts only the two bounded [bad-user](references/attacks-bad-user.md) and
 [access-control](references/attacks-other-data.md) try lists to the intended change.
-Count completed tries, including safe controls; disclose skipped or inconclusive
-tries in review notes. A report needs at least one completed logical try.
+Count completed tries, including safe controls; put inapplicable ids and reasons
+in the optional findings JSON `skipped` list and disclose inconclusive tries in
+review notes. Skips never change counts. Findings at the same file and line get
+a same-cause note. A report needs at least one completed logical try.
 A passing run proves only what was tried.
 
 ## Example: another customer's order
@@ -101,26 +113,26 @@ actual counts and a maximum of 50 wrong logins, rather than the illustrative
 numbers printed in that PDF.
 
 ```text
-BREAK-IT REPORT shop-app · version 0.1.0
+BREAK-IT REPORT shop-app · version 0.2.0
 Seal: real project unchanged
 Attacks: 4 tried   1 blocked   3 got through
 
 CRITICAL  Other people's orders are open
   Tried  Logged in as user A, opened /orders/6 (user B's order)
   Saw    User B's order, item and example delivery address
-  Where  server.mjs:68
+  Where  server.mjs:65
   Advice Show an order only to the user who owns it
 
 SMALL  Empty input crashes one request
   Tried  Submitted empty text to /echo
   Saw    HTTP 500; the server remained alive
-  Where  server.mjs:57
+  Where  server.mjs:55
   Advice Reject empty text with a clear validation message before processing it
 
 SMALL  No limit on login tries
   Tried  Sent 50 wrong logins for synthetic user B, sequentially on localhost
   Saw    All 50 answered without a retry limit
-  Where  server.mjs:33
+  Where  server.mjs:32
   Advice Apply a bounded retry limit and a clear retry-later response
 
 Copy deleted. Nothing left behind. Break-it changed no code.
@@ -151,6 +163,6 @@ from real responses. No build step, package installation or account is required.
 ## Coming next
 
 Future owner-approved versions may add injection, settings/secrets checks,
-floods, AI and desktop checks. They are not implemented in 0.1.0.
+floods, AI and desktop checks. They are not implemented in 0.2.0.
 
 MIT licensed. Nothing is published, tagged or pushed by this build.

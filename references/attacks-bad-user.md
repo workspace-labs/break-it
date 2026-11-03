@@ -28,8 +28,9 @@ defect, stack trace, or absent login limit without demonstrated wider impact.
 
 ## A02: Huge input
 
-- **Send:** One 64 KiB text field in one request, or one byte over a smaller
-  documented limit. Do not enlarge it beyond 64 KiB.
+- **Send:** One large text field in one request, or one byte over a smaller
+  documented limit. Keep the entire UTF-8 request body within `send`'s 64 KiB
+  cap, including JSON keys, quotes and braces; reduce the field to fit.
 - **BLOCKED:** Bounded validation/size rejection, or normal handling within the
   documented supported size; app stays responsive.
 - **HOLE:** Reproducible crash, stack trace, hang, or an over-limit field saved.

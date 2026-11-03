@@ -3,7 +3,7 @@ name: break-it
 description: "Use when an independent reviewer asks to break, attack, or stress-test their own project before release, on a throwaway localhost copy. Tests bad input and access control and reports holes. Never for the builder testing their own delivery, live sites, other people's systems, code fixes, or load/performance testing."
 ---
 
-# Break-it 0.1.0
+# Break-it 0.2.0
 
 Find holes in the owner's own project before release. Only the independent reviewer
 (scanner) uses this skill. It reports evidence in plain words; it never fixes code.
@@ -42,7 +42,9 @@ the app's working folder separately. Do not install tools or dependencies.
 1. Read what the delivered change was meant to do, from the card or the owner's
    words. Read [bad user & crashes](references/attacks-bad-user.md) and
    [other people's data](references/attacks-other-data.md). Pick applicable tries;
-   record why an inapplicable try was skipped. Skips never count as blocked.
+   record each inapplicable try in the optional findings JSON `skipped` list,
+   for example `{"id":"A07","reason":"No create or update route to submit twice"}`.
+   Use unique ids that do not also appear in findings. Skips never change counts.
 2. Before startup, inspect the copy's startup code and configuration. Use isolated
    local test data and disposable users A, B, and a normal user. Disable every
    external integration through existing local test settings. Do not use production
@@ -51,7 +53,19 @@ the app's working folder separately. Do not install tools or dependencies.
    Use its documented offline test launch. Every request must target that copy's
    localhost port; do not follow redirects or contact other services. Keep the
    process handle so you stop only the app you started.
-4. Try one case at a time. Use bounded requests and timeouts from the references.
+   Use `send` for every try and control request:
+
+   ```text
+   node scripts/break-it.mjs send POST http://localhost:4000/login --json '{"user":"A","password":"invented"}'
+   node scripts/break-it.mjs send GET http://localhost:4000/orders/6 --token LOCAL_TEST_SESSION
+   ```
+
+4. Try one case at a time, using one `send` command per request and the bounded
+   cases from the references. `send` makes one local-only request with a 5-second
+   deadline, no redirects or retries, a 64 KiB request-body cap, and a 2 KiB
+   response-body display cap with `(cut)` when truncated. Include JSON envelope
+   bytes in the request limit. A cut response or timeout may leave a try
+   inconclusive; never invent evidence from the unseen part of a response.
    Observe the response and whether the app stays healthy. Count each completed
    logical try as blocked or got through. Expected valid input is blocked against
    the attempted failure when it behaves correctly; ordinary success is not a hole.

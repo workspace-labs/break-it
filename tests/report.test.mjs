@@ -37,7 +37,7 @@ test('report matches example shape and sorts CRITICAL first', async t => {
   s.data.attacks = { tried: 3, blocked: 1, gotThrough: 2 };
   const r = await s.report();
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^BREAK-IT REPORT shop-app · version 0\.1\.0\nSeal: real project unchanged\nAttacks: 3 tried   1 blocked   2 got through/);
+  assert.match(r.stdout, /^BREAK-IT REPORT shop-app · version 0\.2\.0\nSeal: real project unchanged\nAttacks: 3 tried   1 blocked   2 got through/);
   assert.ok(r.stdout.indexOf('CRITICAL') < r.stdout.indexOf('SMALL'));
   for (const field of ['Tried', 'Saw', 'Where', 'Advice']) assert.match(r.stdout, new RegExp(`  ${field} `));
   assert.match(r.stdout, /Copy deleted\. Nothing left behind\. Break-it changed no code\./);
@@ -92,4 +92,95 @@ test('F4 all finding values start in the same column', async t => {
     .map(line => /^(  (?:Tried|Saw|Where|Advice) +)/.exec(line)[1].length);
   assert.equal(columns.length, 4);
   assert.equal(new Set(columns).size, 1);
+});
+
+const validData = () => ({ project: 'shop-app', round: 1,
+  attacks: { tried: 2, blocked: 1, gotThrough: 1 }, findings: [{ ...hole }] });
+
+test('T1 optional skipped list accepts absent, empty and valid lists without changing counts', () => {
+  const data = validData();
+  assert.doesNotThrow(() => validateFindings(data));
+  data.skipped = [];
+  assert.doesNotThrow(() => validateFindings(data));
+  data.skipped = [{ id: 'A07', reason: 'No create or update route to submit twice' }];
+  const before = JSON.stringify(data);
+  assert.doesNotThrow(() => validateFindings(data));
+  assert.equal(JSON.stringify(data), before);
+});
+
+for (const skipped of [null, {}, 'A07', [null], [{}],
+  [{ id: '', reason: 'Not applicable' }], [{ id: '  ', reason: 'Not applicable' }],
+  [{ id: 'A07\nA08', reason: 'Not applicable' }], [{ id: 'A07', reason: '' }],
+  [{ id: 'A07', reason: '  ' }], [{ id: 'A07', reason: 'line one\nline two' }],
+  [{ id: 'A07', reason: 'control\u0000byte' }], [{ id: 7, reason: 'Not applicable' }],
+  [{ id: 'A07', reason: 7 }]]) {
+  test(`T1 refuses invalid skipped evidence ${JSON.stringify(skipped)}`, () => {
+    assert.throws(() => validateFindings({ ...validData(), skipped }), /Refused:.*skipped/);
+  });
+}
+
+test('T1 refuses duplicate skip ids and overlap with finding ids', () => {
+  assert.throws(() => validateFindings({ ...validData(), skipped: [
+    { id: 'A07', reason: 'No write route' }, { id: 'A07', reason: 'No write route' }
+  ] }), /skipped ids must be unique/);
+  assert.throws(() => validateFindings({ ...validData(), skipped: [
+    { id: hole.id, reason: 'Already completed' }
+  ] }), /skipped id must not also appear in findings/);
+});
+
+test('T1 report places skipped evidence after findings before footer without counting it', async t => {
+  const s = await setup(t);
+  s.data.skipped = [{ id: 'A07', reason: 'No create or update route to submit twice' },
+    { id: 'B02', reason: 'No roles beyond normal users' }];
+  const r = await s.report();
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /Attacks: 2 tried   1 blocked   1 got through/);
+  assert.match(r.stdout, /Skipped \(not counted\)\n  A07    No create or update route to submit twice\n  B02    No roles beyond normal users/);
+  assert.ok(r.stdout.indexOf('Advice') < r.stdout.indexOf('Skipped (not counted)'));
+  assert.ok(r.stdout.indexOf('Skipped (not counted)') < r.stdout.indexOf('Copy deleted.'));
+});
+
+test('T1 absent skipped list leaves out the skipped block', async t => {
+  const s = await setup(t);
+  const r = await s.report();
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /Skipped \(not counted\)/);
+});
+
+test('T2 report groups one shared file:line, ignoring anchor text and preserving findings', async t => {
+  const s = await setup(t);
+  s.data.findings = ['A01', 'A03', 'A08'].map((id, index) => ({ ...hole, id,
+    severity: 'SMALL', Where: `server.mjs:57${index ? ` -> anchor ${index}:99` : ''}` }));
+  s.data.attacks = { tried: 4, blocked: 1, gotThrough: 3 };
+  const r = await s.report();
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /Same cause: A01, A03, A08 point to server\.mjs:57; one fix may close all three\./);
+  assert.equal(r.stdout.match(/Same cause:/g)?.length, 1);
+  assert.equal(r.stdout.match(/^SMALL  /gm)?.length, 3);
+  assert.match(r.stdout, /  Where  server\.mjs:57 -> anchor 1:99/);
+  assert.match(r.stdout, /Attacks: 4 tried   1 blocked   3 got through/);
+  assert.ok(r.stdout.lastIndexOf('Advice') < r.stdout.indexOf('Same cause:'));
+});
+
+test('T2 report omits same cause when files or line numbers differ', async t => {
+  const s = await setup(t);
+  s.data.findings = ['server.mjs:57', 'server.mjs:58', 'other.mjs:57'].map((Where, index) =>
+    ({ ...hole, id: `A0${index + 1}`, Where }));
+  s.data.attacks = { tried: 3, blocked: 0, gotThrough: 3 };
+  const r = await s.report();
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /Same cause:/);
+});
+
+test('T2 each shared location appears once, including groups of two', async t => {
+  const s = await setup(t);
+  s.data.findings = ['server.mjs:57', 'server.mjs:57 -> first',
+    'other.mjs:57', 'other.mjs:57 -> second'].map((Where, index) =>
+    ({ ...hole, id: `A0${index + 1}`, Where }));
+  s.data.attacks = { tried: 4, blocked: 0, gotThrough: 4 };
+  const r = await s.report();
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.match(/Same cause:/g)?.length, 2);
+  assert.match(r.stdout, /Same cause: A01, A02 point to server\.mjs:57; one fix may close both\./);
+  assert.match(r.stdout, /Same cause: A03, A04 point to other\.mjs:57; one fix may close both\./);
 });

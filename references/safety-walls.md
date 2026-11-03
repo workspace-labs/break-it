@@ -66,7 +66,11 @@ Never improvise deletion.
 
 ## W6: Nothing leaves this computer
 
-Every request goes only to the copy's localhost port. Never follow a redirect,
+Use `send` for every try and control request, targeting only the copy's localhost
+port. It sends one request with a 5-second deadline, never follows redirects or
+retries, caps the entire request body at 64 KiB, and prints at most 2 KiB of the
+response body with a plain `(cut)` marker if truncated. It uses the same local URL
+check and refusal message as `check --url`. Never follow a redirect,
 download a tool, or contact an external service. Inspect startup behavior first;
 disable external integrations through existing local test settings before launch.
 Use invented users, isolated local stores, and local test files. Never use real
@@ -76,7 +80,7 @@ are essential: the CLI does not intercept arbitrary app network traffic.
 
 ## W7: Hook-friendly commands
 
-Use `node scripts/break-it.mjs` for check, copy, seal, cleanup, and report. Use
+Use `node scripts/break-it.mjs` for check, copy, send, seal, cleanup, and report. Use
 Node's standard library for portable data handling. Do not use privileged shell
 commands, destructive shell shortcuts, downloaded installers, or Git history
 rewrites. No platform-specific shell script is required.

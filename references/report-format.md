@@ -1,5 +1,11 @@
 # Report format
 
+## Contents
+
+- [Findings JSON contract](#findings-json-contract)
+- [Output shape](#output-shape)
+- [After the builder's fix](#after-the-builders-fix)
+
 Use the CLI's real output. Save findings outside both the source and temporary
 run folder. Stop the app, pass `seal`, then run `cleanup` before `report`, in that
 order. Cleanup prints a short `Receipt file:` path, never the receipt body. The
@@ -27,6 +33,9 @@ keep the receipt so corrected findings can be retried.
       "Where": "server.mjs:42",
       "Advice": "Show an order only to the user who owns it"
     }
+  ],
+  "skipped": [
+    { "id": "A07", "reason": "No create or update route to submit twice" }
   ]
 }
 ```
@@ -41,14 +50,16 @@ than filling it in. State the observed effect and test boundary without private
 values. The counts are nonnegative whole numbers: tried = blocked + gotThrough.
 At least one completed logical try is required; a zero-try report is refused.
 Each got-through logical try has one finding; findings.length = gotThrough.
-Skipped or incomplete tries are not counted as blocked. A reported hole can be
-associated with a previously reported hole in the review notes without losing its
-current observation.
+The optional `skipped` list records inapplicable tries as `{ "id": "A07",
+"reason": "No create or update route to submit twice" }`. Both fields must be
+nonempty, single-line strings. Skip ids must be unique and must not also appear
+in `findings`. An absent or empty list is valid. Skipped or incomplete tries do
+not change any attack count and are never counted as blocked.
 
 ## Output shape
 
 ```text
-BREAK-IT REPORT shop-app · version 0.1.0
+BREAK-IT REPORT shop-app · version 0.2.0
 Seal: real project unchanged
 Attacks: 2 tried   1 blocked   1 got through
 
@@ -58,6 +69,9 @@ CRITICAL  Other people's orders are open
   Where  server.mjs:42
   Advice Show an order only to the user who owns it
 
+Skipped (not counted)
+  A07    No create or update route to submit twice
+
 Copy deleted. Nothing left behind. Break-it changed no code.
 ```
 
@@ -66,6 +80,19 @@ one separating space, so every value begins at the same column. The footer is
 emitted only after cleanup succeeded and report removed its receipt. The report
 is a record of the tries completed, never a claim that all possible holes have
 been ruled out.
+
+When two or more findings share a `Where` file and line, report adds one line
+per shared location after all findings. It ignores any ` -> anchor text` when
+grouping, but keeps every finding, its original evidence and all counts:
+
+```text
+Same cause: A01, A03, A08 point to server.mjs:57; one fix may close all three.
+```
+
+No shared location means no `Same cause` line. This is a possible common repair,
+not proof that the observations have identical root causes. If `skipped` is
+present, its `Skipped (not counted)` block follows the findings and any same-cause
+lines, before the footer; an empty list produces just that block's heading.
 
 ## After the builder's fix
 

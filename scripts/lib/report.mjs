@@ -30,6 +30,17 @@ export function validateFindings(data) {
       throw new Error('Refused: Where needs a relative file:line, optionally followed by -> anchor text.');
     }
   }
+  if (data.skipped !== undefined) {
+    if (!Array.isArray(data.skipped)) throw new Error('Refused: skipped must be a list.');
+    const skippedIds = new Set();
+    for (const skip of data.skipped) {
+      text(skip?.id, 'skipped id');
+      text(skip?.reason, 'skipped reason');
+      if (skippedIds.has(skip.id)) throw new Error('Refused: skipped ids must be unique.');
+      if (ids.has(skip.id)) throw new Error('Refused: skipped id must not also appear in findings.');
+      skippedIds.add(skip.id);
+    }
+  }
 }
 function validateReceipt(receipt, id) {
   const entryValid = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value) ||
@@ -51,7 +62,7 @@ export async function reportRun(id, data) {
   const { receipt, identity } = await loadReceipt(id);
   validateReceipt(receipt, id);
   await verifySeal(receipt);
-  const header = data.round === 1 ? `BREAK-IT REPORT ${data.project} · version 0.1.0` : `ROUND ${data.round} ${data.project}`;
+  const header = data.round === 1 ? `BREAK-IT REPORT ${data.project} · version 0.2.0` : `ROUND ${data.round} ${data.project}`;
   const { tried, blocked, gotThrough } = data.attacks;
   const lines = [header, 'Seal: real project unchanged', `Attacks: ${tried} tried   ${blocked} blocked   ${gotThrough} got through`];
   const sorted = [...data.findings].sort((a, b) => Number(b.severity === 'CRITICAL') - Number(a.severity === 'CRITICAL'));
@@ -59,10 +70,26 @@ export async function reportRun(id, data) {
     lines.push('', `${finding.severity}  ${finding.title}`);
     for (const label of ['Tried', 'Saw', 'Where', 'Advice']) lines.push(`  ${label.padEnd(6)} ${finding[label]}`);
   }
+  const causes = new Map();
+  for (const finding of sorted) {
+    const location = finding.Where.split(' -> ', 1)[0];
+    if (!causes.has(location)) causes.set(location, []);
+    causes.get(location).push(finding.id);
+  }
+  for (const [location, ids] of causes) {
+    if (ids.length < 2) continue;
+    const shared = ids.length === 2 ? 'both' : `all ${ids.length === 3 ? 'three' : ids.length}`;
+    lines.push(`Same cause: ${ids.join(', ')} point to ${location}; one fix may close ${shared}.`);
+  }
   if (data.round > 1) {
     const critical = sorted.filter(f => f.severity === 'CRITICAL').length;
     const result = sorted.length === 0 ? "Ready for the owner's look" : 'Holes remain; send advice to the builder';
     lines.push(`Critical holes: ${critical}   ->   ${result}`);
+  }
+  if (data.skipped !== undefined) {
+    lines.push('', 'Skipped (not counted)');
+    const width = Math.max(3, ...data.skipped.map(skip => skip.id.length));
+    for (const skip of data.skipped) lines.push(`  ${skip.id.padEnd(width)}    ${skip.reason}`);
   }
   lines.push('', 'Copy deleted. Nothing left behind. Break-it changed no code.');
   await deleteReceipt(id, identity);

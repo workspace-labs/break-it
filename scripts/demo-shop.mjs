@@ -1,6 +1,6 @@
 // Reproducible teaching fixture only; not a generic attack runner or code fixer.
 import { fork, spawnSync } from 'node:child_process';
-import http from 'node:http';
+import { sendRequest } from './lib/send.mjs';
 import { mkdtemp, readFile, writeFile, cp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -49,24 +49,13 @@ export async function stopShop({ child }) {
   });
 }
 
-function request(port, route, { method = 'GET', data, token } = {}) {
-  // Host is a literal loopback address. HTTP redirects are returned, never followed.
-  return new Promise((resolve, reject) => {
-    const payload = data === undefined ? undefined : JSON.stringify(data);
-    const req = http.request({ hostname: '127.0.0.1', port, path: route, method,
-      headers: { ...(payload ? { 'Content-Type': 'application/json' } : {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}) } }, res => {
-      let text = '';
-      res.on('data', chunk => { text += chunk; });
-      res.on('end', () => {
-        try { resolve({ status: res.statusCode, data: JSON.parse(text), text }); }
-        catch { reject(new Error('Copy returned invalid JSON')); }
-      });
-    });
-    req.setTimeout(3000, () => req.destroy(new Error('Copy request timed out')));
-    req.on('error', reject);
-    req.end(payload);
+async function request(port, route, { method = 'GET', data, token } = {}) {
+  const response = await sendRequest(method, `http://127.0.0.1:${port}${route}`, {
+    json: data === undefined ? undefined : JSON.stringify(data), token
   });
+  if (response.cut) throw new Error('Copy response exceeded the bounded fixture output');
+  try { return { status: response.status, data: JSON.parse(response.body), text: response.body }; }
+  catch { throw new Error('Copy returned invalid JSON'); }
 }
 
 export async function probeShop(port, folder) {
@@ -77,7 +66,7 @@ export async function probeShop(port, folder) {
     return `server.mjs:${index + 1}`;
   };
   const login = await request(port, '/login', {
-    method: 'POST', data: { user: 'A', password: 'demo-a' }
+    method: 'POST', data: { user: 'A', password: 'example-a' }
   });
   if (login.status !== 200 || !login.data.session) throw new Error('Control login failed');
   const token = login.data.session;

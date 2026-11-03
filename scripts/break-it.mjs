@@ -23,8 +23,12 @@ async function main(args) {
   } else if (command === 'report' && first && rest.length === 1) {
     const { reportRun } = await import('./lib/report.mjs');
     console.log(await reportRun(first, JSON.parse(await readFile(rest[0], 'utf8'))));
+  } else if (command === 'send' && first && rest.length >= 1) {
+    const { sendRequest, sendOptions } = await import('./lib/send.mjs');
+    const response = await sendRequest(first, rest[0], sendOptions(rest.slice(1)));
+    console.log(`Status: ${response.status}\n${response.body}${response.cut ? '\n(cut)' : ''}`);
   } else {
-    throw new Error('Usage: node scripts/break-it.mjs check <project> [--url URL] | copy <project> [--skip] | seal <run-id> | cleanup <run-id> | report <run-id> <findings.json>');
+    throw new Error('Usage: node scripts/break-it.mjs check <project> [--url URL] | copy <project> [--skip] | seal <run-id> | cleanup <run-id> | report <run-id> <findings.json> | send <METHOD> <URL> [--json <body>] [--token <bearer>]');
   }
 }
 main(process.argv.slice(2)).catch(error => {

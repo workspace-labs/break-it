@@ -5,6 +5,28 @@ import os from 'node:os';
 import path from 'node:path';
 import { runDemo, startShop, stopShop, probeShop, examplePath } from '../scripts/demo-shop.mjs';
 
+test('shop source gives away no hole, try id or demo answer', async () => {
+  const source = await readFile(path.join(examplePath, 'server.mjs'), 'utf8');
+  assert.doesNotMatch(source, /PLANTED|HOLE|A0|B0|demo/i);
+});
+
+test('shop answer key stays outside the app and identifies actual source lines', async () => {
+  const keyPath = path.join(examplePath, '..', 'shop-app-answers.md');
+  assert.equal(path.dirname(keyPath), path.dirname(examplePath));
+  const key = await readFile(keyPath, 'utf8');
+  const source = await readFile(path.join(examplePath, 'server.mjs'), 'utf8');
+  for (const [id, anchor] of [
+    ['A09', 'const limited ='],
+    ['A01', 'if (!data.text) throw'],
+    ['B01', 'const requireOwner =']
+  ]) {
+    const line = source.split('\n').findIndex(text => text.includes(anchor)) + 1;
+    assert.ok(line > 0, anchor);
+    assert.ok(key.includes(`\`${id}\` — \`server.mjs:${line}\``), `${id} answer line`);
+    assert.ok(key.includes(`\`${anchor}\``), `${id} answer anchor`);
+  }
+});
+
 test('shop end to end detects planted holes and preserves the safe route', async () => {
   const result = await runDemo();
   assert.deepEqual(result.rounds[0].findings.map(f => [f.id, f.severity]),
