@@ -103,6 +103,9 @@ header assignments, including names such as `DB_PASSWORD`, `client_secret`,
 `accessToken` and `apiKey`. Code that reads an environment variable, template
 references, placeholders and prose without an assignment are ignored. The same
 rule protects history masking and report evidence; see the exact rules above.
+Nested object fields are inspected even beneath a sensitive parent such as
+`auth`; an outer object prefix must not hide its inner password. Seal and copy
+diagnostics escape filename control characters so names cannot forge status lines.
 
 For C02, read the copy's history with plain git and pipe it straight into `mask`:
 
@@ -217,7 +220,8 @@ Tests need permission to open temporary localhost ports. They never contact an
 external host. `node scripts/demo-shop.mjs --write` regenerates the example report
 from real responses. No build step, package installation or account is required.
 
-How earlier releases were tested (7 rounds, 7 independent reviews) is in
+Historical build/review rounds (9 rounds, 9 independent reviews) and the current
+regression audit and merge verification are recorded in
 [TEST-EVIDENCE.md](TEST-EVIDENCE.md).
 
 ## Coming next
@@ -225,4 +229,4 @@ How earlier releases were tested (7 rounds, 7 independent reviews) is in
 Future owner-approved versions may add injection, other settings checks,
 AI and desktop checks. They are not implemented in 0.4.0.
 
-MIT licensed. Nothing is published, tagged or pushed by this build.
+MIT licensed.

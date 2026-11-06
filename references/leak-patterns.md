@@ -82,7 +82,14 @@ token expired today” has no assignment and never matches.
   CLI reply display also masks shorter named credential values; 8 characters
   or fewer use bullets.
 
-Assignment-like text inside an already consumed literal remains part of that
+Object literals are containers: their inner named assignments are inspected
+instead of consuming an inner field name as the parent's scalar value. Quoted
+object keys may contain punctuation, Unicode or escaped delimiters; they are not
+limited to the generic credential-name length. Arrays with object entries also
+leave inner named fields visible to inspection. Existing scalar-array and
+brace-wrapped scalar candidates retain their masking behavior.
+
+Assignment-like text inside an already consumed quoted scalar remains part of that
 value; it is not retried as a second generic field. If a quoted value cannot be
 parsed, its remaining line is not retried for nested generic assignments.
 A separate statement after an ignored

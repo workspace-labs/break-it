@@ -1,8 +1,11 @@
 # Test evidence
 
-How break-it was tested, version by version and round by round. The builder (Codex) built every round; an
-independent reviewer (Claude) re-ran the tests on a fresh clone, tried to break it, and gave a verdict. Only the
-owner pushed or installed. All runs were on macOS. **Windows has not been tested yet.**
+How break-it was tested, version by version and round by round. In the historical 0.1–0.4.0 build/review rounds,
+the builder (Codex) built every round and an independent reviewer (Claude) re-ran the tests on a fresh clone,
+tried to break it, and gave a verdict. Only the owner pushed or installed. The new 0.3.1 local audit below
+records its own verification separately; Claude has not reviewed that patch yet.
+The 0.4.0 section also records this merge; its independent review is pending.
+All runs were on macOS. **Windows has not been tested yet.**
 
 ## In one table
 
@@ -11,8 +14,12 @@ owner pushed or installed. All runs were on macOS. **Windows has not been tested
 | 0.1.0 | **3** (build + 2 fix rounds) | `d580967` → `84f1650` → `ffa8af6` | 75 / 75 | Changes required → Approved with comments → **Approved** |
 | 0.2.0 | **1** (build) | `e9c72ff` | 110 / 110 | **Approved** first time |
 | 0.3.0 | **3** (build + 2 fix rounds) | `2444790` → `b565245` → `9d4ae88` | 208 / 208 | Changes required → Changes required → **Approved** |
+| 0.4.0 | **2** (build + 1 fix round) | `3d609ab` → `07385f6` | 232 / 232 before merge | Approved with comments → **Approved**; merge review pending |
 
-**7 rounds in total, 7 reviews.** Every test count was re-run by the reviewer on Node 18.20.8, 20.20.2 and 22.23.1.
+**9 build/review rounds in total, 9 independent reviews.** The historical 0.1.0–0.3.0
+test counts were re-run by the reviewer on Node 18.20.8, 20.20.2 and 22.23.1. The
+separate 0.3.1 local audit and this merge verification are not counted as independent
+reviews; this merge passed 244 tests on each of those Node versions, as recorded below.
 
 ---
 
@@ -116,3 +123,206 @@ guard and the shop demo (round 1: 8 tried, 6 holes; round 2: 8 blocked) all held
 - A secret split across two lines is not found.
 - A file copy is not an operating-system sandbox: the reviewer must make sure the app runs locally only.
 - **Windows not tested.** Every run above was on macOS.
+
+
+---
+
+## 0.3.1 — local audit and repairs (2026-11-04)
+
+Status: fixes tested; the owner explicitly requested committing and pushing this
+patch on 2026-11-04. This update includes the repairs, twelve regression tests,
+version 0.3.1 and this test record. No global skill installation was performed.
+Claude has not formally reviewed this patch; publishing it does not claim that review.
+
+The owner requested checking and testing the GitHub skill, fixing confirmed problems,
+and writing down the fixes with evidence. Source: `workspace-labs/break-it`, clean
+`main` at `b59eba7462265d22b36637eee04679ffc190df8f` before edits.
+Environment: macOS, Node `v22.14.0`, npm `10.9.2`, Node standard library only.
+
+### F01 — a sensitive parent could hide an inner password
+
+Before: the generic rule treated an object prefix such as `auth={password:` as
+one scalar value and advanced past the inner field name. A complete synthetic
+password could survive response masking. A short outer prefix could also let
+that raw password through the report guard; scan/history checks missed the inner value.
+
+Fix: `scripts/lib/leaks.mjs` recognizes object containers and continues inspecting
+inner named assignments. Quoted object keys can contain punctuation, Unicode,
+long names and escaped quotes. Mixed arrays retain their existing prefix masking
+while exposing later inner assignments to inspection. Consumed array spans prevent
+repeated suffix scans. Scalar arrays and brace-wrapped scalar values remain masked;
+nested environment/configuration reads and placeholders remain ignored.
+
+Evidence: eight new tests in `tests/leak-nested.test.mjs` cover recognition,
+scan, stdin/history masking, report refusal, safe controls, real localhost CLI
+response masking and bounded handling of large/malformed prefixes.
+
+- Original implementation: four regression tests failed (`audit-leaks/red.log`).
+- A scalar-preservation regression caught during the repair failed, then was
+  corrected (`audit-leaks/red-preservation.log`).
+- A further arbitrary-quoted-key reproduction failed, then was corrected
+  (`audit-leaks/red-container-keys.log`).
+- Final focused run, including existing performance cases: **24 passed, 0 failed,
+  0 skipped** (`audit-leaks/green.log`).
+- Supplemental tester: **1,444 checks passed**, including spacing, nesting,
+  arbitrary first keys, scalar/reference controls; no complete synthetic value
+  survived. Three malformed-input probes completed in **7–63 ms** on this Mac
+  (`workflow-test/nested-adversarial.json`).
+
+### F02 — filenames could forge diagnostic output
+
+Before: source filenames appeared raw in changed-file alarms and link refusals.
+A newline could introduce a fake unchanged-status line; an ANSI escape could clear
+or alter the terminal display. Missing-path filesystem errors had the same issue.
+The seal still exited 3: this was a diagnostic-integrity defect, not a seal bypass.
+
+Fix: `scripts/lib/seal.mjs` and `scripts/lib/copy.mjs` use the existing secret-safe
+label formatter for dynamic names. `scripts/break-it.mjs` sanitizes ordinary error
+messages too. Deliberate multiline seal alarms retain their layout. Exact filenames
+remain unchanged in fingerprint keys; source bytes and cleanup boundaries are preserved.
+
+Evidence: four new tests in `tests/diagnostic-labels.test.mjs` cover changed-file
+seal/cleanup alarms, exact fingerprint keys, credential masking in names,
+absolute-link refusals and crafted missing paths in check/copy/report.
+
+- Original filename regressions: **2 failed, 1 existing control passed**
+  (`audit-seal/red.log`).
+- Additional filesystem-error regression: **1 failed, 3 passed**
+  (`audit-seal/red-filesystem.log`).
+- Focused safety/link/report/receipt verification: **95 passed, 0 failed,
+  0 skipped** (`audit-seal/green-filesystem.log`).
+- Supplemental tester: three error cases exited 1 with no stdout, raw terminal
+  escapes or complete synthetic values (`workflow-test/error-adversarial.json`).
+
+### Complete verification
+
+Evidence folder beside this checkout: `../break-it-review-20261104-evidence/`.
+Paths above are relative to that folder. The original skill backup is
+`baseline/break-it/`; file hashes are in `baseline-manifests.json`.
+
+Commands from the checkout root, with `TMPDIR` set to the evidence folder's
+`temp/` so fixtures and receipts are isolated:
+
+```text
+npm test
+node --test tests/leak-nested.test.mjs tests/leak-performance.test.mjs
+node --test tests/diagnostic-labels.test.mjs tests/safety.test.mjs tests/links.test.mjs tests/skip-hints.test.mjs tests/report.test.mjs tests/receipts.test.mjs tests/receipt-directory.test.mjs
+```
+
+- Initial restricted-sandbox run: **193 passed, 15 failed**, all 15 failures were
+  localhost `EPERM`; those failures are retained (`tests-before.log`).
+- Baseline rerun with localhost permission: **208 passed, 0 failed, 0 skipped**
+  (`tests-baseline-localhost.log`).
+- Final complete suite with localhost permission: **220 passed, 0 failed,
+  0 skipped**, exit 0, approximately **8.06 seconds** (`tests-final.log`).
+- Separate tester's full CLI lifecycle: **13 check groups passed**. A synthetic app
+  ran only from its copy; redirects stayed unfollowed; invalid findings retained
+  the receipt; corrected findings consumed it; a post-cleanup source change
+  refused reporting with exit 3. The tester confirmed its child exited and its
+  runs/receipts were gone (`workflow-test/result.json`).
+- Static skill-audit results are retained as `audit-before.json` and
+  `audit-after.json`. The repair report explains remaining heuristic notices.
+- Approved documents under `docs/` remain byte-identical. No dependency or
+  architecture change. Existing installed skills were inspected but not updated.
+
+Limits: verification ran on Node 22/macOS, not Node 18 or Windows. Synthetic
+fixture testing does not prove every possible secret format is detectable or
+that arbitrary application startup is isolated. Existing documented scanner
+limits continue to apply. Claude's formal review has not been performed. The owner
+explicitly authorized commit/push after reading the local repair summary; global
+installation remains unchanged.
+
+
+### Owner-requested commit and push
+
+On 2026-11-04 the owner requested committing and pushing the tested fixes and
+updating this file. The publication includes the two repairs described above,
+all twelve new regression tests, the 0.3.1 version/changelog update and matching
+instruction/reference updates. The baseline, failing reproductions and passing
+results are preserved in this record; it is not a claim of a Claude review.
+
+Pre-commit verification: the full `npm test` suite passed again with **220 tests,
+0 failures, 0 skipped**, exit 0, approximately **8.22 seconds**
+(`tests-pre-push.log` in the local evidence folder). A separate read-only check
+found no unrelated additions, real credentials or personal absolute paths in the
+new tests or this record. `git diff --check` passed; all approved `docs/` files
+remain byte-identical to the base commit. A fresh fetch confirmed `origin/main`
+still matched the baseline before the commit. Publication targets
+`workspace-labs/break-it` on `main`, using a normal push with no history rewrite. Detailed raw logs and backup copies remain in the
+local evidence folder described above; the regression tests are included in Git
+so another reviewer can rerun them.
+
+
+---
+
+## 0.4.0 — Family D, bounded load (2 reviewed rounds, then merge verification)
+
+The two historical build/review results below are recorded from the owner-approved
+2026-11-07 merge brief. This merge's results were measured in the merged tree by
+Codex; Claude's independent review of this merge is pending.
+
+### Round 1 — build (`3d609ab`, 228 tests) → **Approved with comments**
+
+Family D added bounded localhost load checks through the existing `send` boundary,
+four-line summaries and one final health probe. Claude's verdict was **APPROVED WITH
+COMMENTS**. Findings: **N1** deadline cancellations could not be distinguished from
+an app failure; **N2** redirects had no separate 3xx status bucket.
+
+### Round 2 — fix round 1 (`07385f6`, 232 tests) → **Approved**
+
+Both findings **Fixed** in Claude's review. N1 gained a separate `cancelled at deadline`
+count, excluded from transport failures and status totals. N2 gained a 3xx bucket;
+other received statuses and genuine `no status` failures stayed separate. Claude
+confirmed the N1 regression failed **4/4** runs on `3d609ab` and passed after the fix.
+His verdict was **APPROVED**, with no findings. These are the prior round's results,
+not a claim that this merge has already been independently reviewed.
+
+### Merge verification — join the owner's 0.3.1 repairs without losing Family D
+
+Clean local `main` began at `07385f6`; a fresh `git fetch origin` confirmed
+`origin/main` at `b08e55e`. An ordinary merge produced exactly six conflicts:
+CHANGELOG.md, README.md, SKILL.md, package.json, scripts/lib/report.mjs and
+tests/report.test.mjs. Version text keeps **0.4.0**; the changelog retains both
+release entries verbatim and in date order. The entire 0.3.1 audit section above
+is unchanged. No code conflict required a logic resolution.
+
+Builder verification on macOS, using installed Node binaries and separate
+`TMPDIR` folders for each suite, ran `node --test` on this same merged code:
+
+- Node **18.20.8**: **244 passed, 0 failed, 0 cancelled, 0 skipped**, exit 0.
+- Node **20.20.2**: **244 passed, 0 failed, 0 cancelled, 0 skipped**, exit 0.
+- Node **22.23.1**: **244 passed, 0 failed, 0 cancelled, 0 skipped**, exit 0.
+
+All eight `tests/leak-nested.test.mjs` cases and all four
+`tests/diagnostic-labels.test.mjs` cases passed in each suite. In the same runs,
+`scan` and stdin/history masking caught the nested synthetic credential; the
+report guard refused unmasked nested evidence; `send` masked the nested reply;
+control-character filenames could not forge diagnostic status lines. The Family D
+CLI, ceilings, concurrency, no-redirect, deadline, status and recovery tests also
+passed. Thus nested masking and load are exercised together in the merged tree.
+
+Byte comparisons against `b08e55e` found identical `leaks.mjs`, `copy.mjs`,
+`seal.mjs`, both new regression files and both updated leak/report references.
+The CLI's complete error handler is identical to 0.3.1, including non-seal
+`safeLabel(message)` handling; its separate `load` dispatch remains present.
+The approved files under `docs/` are unchanged.
+
+`node scripts/demo-shop.mjs` passed again: round 1 **12 tried, 3 blocked, 9 findings**;
+round 2 **12 tried, 12 blocked, 0 findings**. Both seals passed and both reports
+confirmed cleanup. Its output was byte-identical to `examples/shop-app-report.md`,
+so `--write` was not run and the example report was not regenerated.
+
+Evidence beside this checkout: `../break-it-merge-20261107-evidence/`, including
+`tests-merged-node18.log`, `tests-merged-node20.log`, `tests-merged-node22.log`,
+`demo-shop-output.md`, `preservation-checks.json` and `skill-audit.json`.
+The pre-merge Node 22.14.0 baseline passed **232 tests** before any edit.
+The static audit retained the known build-folder/discovery-name mismatch
+(`break-it-skill` versus `break-it`), an image skipped at its read-size limit,
+and a README tool-name heuristic notice. These are not new merge regressions;
+no installed skill was changed.
+
+README counts were calculated from the nine `### Round` build/review headings:
+3 for 0.1.0 + 1 for 0.2.0 + 3 for 0.3.0 + 2 for 0.4.0. The separate 0.3.1 audit,
+agent-level example and pending merge review do not add independent reviews.
+Version remains **0.4.0**. This merge is local only: no push, tag, release or
+installation change. Claude re-reviews before the owner decides whether to push.
