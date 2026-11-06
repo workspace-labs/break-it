@@ -1,6 +1,7 @@
 // Reproducible teaching fixture only; not a generic attack runner or code fixer.
 import { fork, spawnSync } from 'node:child_process';
 import { sendRequest } from './lib/send.mjs';
+import { runLoad } from './lib/load.mjs';
 import { mkdtemp, readFile, writeFile, cp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -56,6 +57,51 @@ async function request(port, route, { method = 'GET', data, token } = {}) {
   if (response.cut) throw new Error('Copy response exceeded the bounded fixture output');
   try { return { status: response.status, data: JSON.parse(response.body), text: response.body }; }
   catch { throw new Error('Copy returned invalid JSON'); }
+}
+
+async function probeLoad(port, where) {
+  const base = `http://127.0.0.1:${port}`;
+  const options = { requests: 8, concurrency: 2 };
+  const safeBefore = await runLoad('GET', `${base}/catalog`, options);
+  const before = await request(port, '/catalog-refresh');
+  if (before.status !== 200) throw new Error('Catalog-refresh single-request control failed');
+  const burst = await runLoad('GET', `${base}/catalog-refresh`, options);
+  const login = await runLoad('POST', `${base}/login`, {
+    ...options, json: JSON.stringify({ user: 'admin', password: 'wrong-demo-password' })
+  });
+  const safeAfter = await runLoad('GET', `${base}/catalog`, options);
+  const findings = [];
+  let blocked = 0;
+  if (burst.failed > 0) {
+    findings.push({ id: 'D01', severity: 'CRITICAL', title: 'Catalog refresh stops answering under load',
+      Tried: 'After one successful request, sent 8 localhost catalog-refresh requests with concurrency 2',
+      Saw: `${burst.failed} requests failed without an HTTP status`,
+      Where: where('if (catalogJobs.length > 4) catalogAvailable = false;'),
+      Advice: 'Release completed catalog work and keep resource use bounded between requests' });
+  } else if (burst.completed === options.requests && burst.statuses['2xx'] === options.requests) blocked++;
+  else throw new Error('Inconclusive catalog-refresh burst');
+  if (login.statuses['4xx'] === options.requests && !login.failed && login.afterBurst.status === 401) {
+    findings.push({ id: 'D02', severity: 'SMALL', title: 'Login never throttles a concurrent burst',
+      Tried: 'Sent 8 wrong logins for synthetic admin with concurrency 2 on localhost',
+      Saw: 'The burst answered consistently and its final probe still returned HTTP 401; no retry-later response',
+      Where: where('const limited ='),
+      Advice: 'Bound login attempts and return a clear retry-later response to slow password guessing' });
+  } else if (login.afterBurst.status === 429) blocked++;
+  else throw new Error('Inconclusive login burst');
+  if (!burst.afterBurst.status) {
+    findings.push({ id: 'D04', severity: 'CRITICAL', title: 'Catalog refresh does not recover after the burst',
+      Tried: 'Compared the successful pre-burst catalog-refresh request with the final health probe',
+      Saw: 'The final request to the same target did not answer with an HTTP status',
+      Where: where('if (!catalogAvailable) return req.socket.destroy();'),
+      Advice: 'Release retained work so new requests still answer after the burst' });
+  } else if (burst.afterBurst.status === 200) blocked++;
+  else throw new Error('Inconclusive catalog-refresh recovery');
+  const safe = [safeBefore, safeAfter].every(result => result.sent === options.requests &&
+    result.completed === options.requests && result.failed === 0 &&
+    result.statuses['2xx'] === options.requests && result.afterBurst.status === 200);
+  if (!safe) throw new Error('Plain catalog safe control failed under load');
+  blocked++;
+  return { findings, blocked };
 }
 
 export async function probeShop(port, folder) {
@@ -128,8 +174,11 @@ export async function probeShop(port, folder) {
   else throw new Error('Inconclusive error-detail response');
   const alive = await request(port, '/safe-orders/1', { token });
   if (alive.status !== 200) throw new Error('Server-alive control failed');
+  const load = await probeLoad(port, where);
+  findings.push(...load.findings);
+  blocked += load.blocked;
   return { project: 'shop-app', findings,
-    attacks: { tried: 6, blocked, gotThrough: findings.length } };
+    attacks: { tried: 10, blocked, gotThrough: findings.length } };
 }
 
 async function round(source, number, workspace, runFolders) {
@@ -192,7 +241,7 @@ export async function runDemo() {
     const file = path.join(fixed, 'server.mjs');
     let source = await readFile(file, 'utf8');
     // Builder simulation is restricted to this synthetic fixture in the harness workspace.
-    for (const name of ['limited', 'validateEmpty', 'requireOwner', 'omitPrivate', 'hideDetails']) {
+    for (const name of ['limited', 'validateEmpty', 'requireOwner', 'omitPrivate', 'hideDetails', 'releaseCatalogWork']) {
       source = source.replace(`const ${name} = false;`, `const ${name} = true;`);
     }
     await writeFile(file, source);

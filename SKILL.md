@@ -1,9 +1,9 @@
 ---
 name: break-it
-description: "Use when an independent reviewer asks to break, attack, or stress-test their own project before release, on a throwaway localhost copy. Tests bad input, access control and leaks: secrets in files/history, over-sharing replies, error details and logs. Reports holes. Never for the builder testing their own delivery, live sites, other people's systems, code fixes, or load/performance testing."
+description: "Use when an independent reviewer asks to break, attack, or stress-test their own project before release, on a throwaway localhost copy. Tests bad input, access control, resilience under bounded load, and leaks: secrets in files/history, over-sharing replies, error details and logs. Reports holes. Never for the builder testing their own delivery, live sites, other people's systems, code fixes or performance benchmarking."
 ---
 
-# Break-it 0.3.0
+# Break-it 0.4.0
 
 Find holes in the owner's own project before release. Only the independent reviewer
 (scanner) uses this skill. It reports evidence in plain words; it never fixes code.
@@ -41,8 +41,9 @@ the app's working folder separately. Do not install tools or dependencies.
 
 1. Read what the delivered change was meant to do, from the card or the owner's
    words. Read [bad user & crashes](references/attacks-bad-user.md),
-   [other people's data](references/attacks-other-data.md), and
-   [leaks](references/attacks-leaks.md). Pick applicable tries;
+   [other people's data](references/attacks-other-data.md),
+   [leaks](references/attacks-leaks.md), and
+   [load: many users at once](references/attacks-load.md). Pick applicable tries;
    record each inapplicable try in the optional findings JSON `skipped` list,
    for example `{"id":"A07","reason":"No create or update route to submit twice"}`.
    Use unique ids that do not also appear in findings. Skips never change counts.
@@ -60,7 +61,7 @@ the app's working folder separately. Do not install tools or dependencies.
    Use its documented offline test launch. Every request must target that copy's
    localhost port; do not follow redirects or contact other services. Keep the
    process handle so you stop only the app you started.
-   Use `send` for every try and control request:
+   Use `send` for every per-request try and control request:
 
    ```text
    node scripts/break-it.mjs send POST http://localhost:4000/login --json '{"user":"A","password":"invented"}'
@@ -77,6 +78,26 @@ the app's working folder separately. Do not install tools or dependencies.
    Observe the response and whether the app stays healthy. Count each completed
    logical try as blocked or got through. Expected valid input is blocked against
    the attempted failure when it behaves correctly; ordinary success is not a hole.
+   After the per-request tries, use `load` for applicable Family D bursts against
+   the same copy's localhost port. First establish with `send` that the route
+   answers. Start small; a burst is one logical try, not one try per request:
+
+   ```text
+   node scripts/break-it.mjs load GET http://localhost:4000/health --requests 20 --concurrency 2 --duration 1
+   ```
+
+   `load` reuses `send` and prints only counts, status totals, completed-request
+   latency and one final after-burst health probe, never response bodies. The
+   burst stops at the request budget or duration limit, whichever comes first.
+   Hard ceilings are 2,000 burst requests, 50 in flight and 30 seconds, including
+   an implicit 30-second stop when `--duration` is omitted. Defaults are 200
+   requests and 10 in flight. In-flight burst requests are cancelled at the
+   duration cap; each also retains `send`'s 5-second deadline. The single final
+   health probe is additional to the burst request budget and runs afterward
+   with its own deadline of at most 5 seconds.
+   Observe the summary and whether the app still answers. A healthy normal route
+   absorbing a burst is a safe control, never a hole. Stop on an observed outage;
+   do not repeat damaging bursts or use this as a performance benchmark.
 5. Log each got-through try with its id, severity, title, **Tried, Saw, Where,
    Advice**. Locate the actual line in the copy, expressed as a relative `file:line`.
    Keep evidence outside the run folder so cleanup cannot erase the report input.
@@ -84,6 +105,10 @@ the app's working folder separately. Do not install tools or dependencies.
    secret is never printed, saved, or reported: use its first 3 characters + `…`
    + last 4 and its length; values of 8 characters or fewer use `•••• (N chars)`.
    For C03/C04 use `send`; describe private fields without copying their values.
+   For an observed Family D failure, use its D01–D04 id and the same
+   Tried/Saw/Where/Advice fields with a real `file:line` in the copy; report the
+   chosen bounds, status counts and recovery observation. A failed health probe
+   alone does not establish its cause; disclose inconclusive cases honestly.
 6. After the tries, run `node scripts/break-it.mjs scan <run-id>` again for C05:
    inspect only logs the app wrote inside the copy, looking for invented passwords
    or tokens sent during this run. Compare before/after masked hits and locations;

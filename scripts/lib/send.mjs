@@ -14,7 +14,7 @@ function boundedText(buffer) {
     cut: decoded.length > outputLimit };
 }
 
-export async function sendRequest(method, input, { json, token } = {}) {
+export function validateRequest(method, input, { json, token } = {}) {
   const url = checkUrl(input);
   if (typeof method !== 'string' || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(method)) {
     throw new Error('Refused: method must be one HTTP method.');
@@ -22,6 +22,12 @@ export async function sendRequest(method, input, { json, token } = {}) {
   if (json !== undefined && (typeof json !== 'string' || Buffer.byteLength(json) > bodyLimit)) {
     throw new Error('Refused: request body must be at most 64 KiB.');
   }
+  if (token !== undefined) http.validateHeaderValue('Authorization', `Bearer ${token}`);
+  return url;
+}
+
+export async function sendRequest(method, input, { json, token, signal } = {}) {
+  const url = validateRequest(method, input, { json, token });
   const headers = { Host: url.host };
   if (json !== undefined) {
     headers['Content-Type'] = 'application/json';
@@ -42,9 +48,16 @@ export async function sendRequest(method, input, { json, token } = {}) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
       if (error) reject(error);
       else resolve(result);
     };
+    const abort = () => {
+      finish(new Error('Refused: request stopped at the load deadline.'));
+      req?.destroy();
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) { abort(); return; }
     try {
       req = transport.request({ hostname, port: url.port || undefined,
         path: url.pathname + url.search, method: method.toUpperCase(), headers,

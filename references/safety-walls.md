@@ -9,6 +9,7 @@
 - [W5: No temporary run left behind](#w5-no-temporary-run-left-behind)
 - [W6: Nothing leaves this computer](#w6-nothing-leaves-this-computer)
 - [W7: Hook-friendly commands](#w7-hook-friendly-commands)
+- [W8: Bounded load only](#w8-bounded-load-only)
 
 These walls apply to every run, including a retest. The CLI handles file checks,
 copying, fingerprints, deletion, and report rendering. The reviewer remains
@@ -81,8 +82,8 @@ Never improvise deletion.
 
 ## W6: Nothing leaves this computer
 
-Use `send` for every try and control request, targeting only the copy's localhost
-port. It sends one request with a 5-second deadline, never follows redirects or
+Use `send` for every per-request try and control request, targeting only the copy's
+localhost port. It sends one request with a 5-second deadline, never follows redirects or
 retries, caps the entire request body at 64 KiB, and prints at most 2 KiB of the
 response body with a plain `(cut)` marker if truncated. It uses the same local URL
 check and refusal message as `check --url`. Never follow a redirect,
@@ -92,6 +93,7 @@ Use invented users, isolated local stores, and local test files. Never use real
 accounts, shared databases, or production data. If the copy cannot be made fully
 local without code changes, stop and explain the blocker. These reviewer checks
 are essential: the CLI does not intercept arbitrary app network traffic.
+`load` goes through `send` for every burst request and health probe; it adds no new network primitive.
 
 Leaks are inspected only in the copy. Use `scan` for files and copy-local logs;
 it reads text in bounded 1 MiB windows with 4 KiB overlap, up to 20 MiB per file,
@@ -106,8 +108,27 @@ responses as evidence.
 
 ## W7: Hook-friendly commands
 
-Use `node scripts/break-it.mjs` for check, copy, scan, mask, send, seal, cleanup, and report. Use
+Use `node scripts/break-it.mjs` for check, copy, scan, mask, send, load, seal, cleanup, and report. Use
 Node's standard library for portable data handling. Do not use privileged shell
 commands, destructive shell shortcuts, downloaded installers, or Git history
 rewrites. The one plain-git exception reads history from the copy and pipes it
 straight into `mask`, as shown in C02. No platform-specific shell script is required.
+
+## W8: Bounded load only
+
+Use `load` only against the owner's throwaway copy's localhost port, after proving
+that it is the copy you started. It uses the same URL check and non-localhost
+refusal as `send`; it never follows redirects. Hard ceilings are concurrency
+≤ 50, burst requests ≤ 2,000 and burst duration ≤ 30 seconds. Values above the
+ceilings or malformed options are refused. Without `--duration`, the burst still
+has a 30-second hard stop; stop at the first request or duration limit reached.
+In-flight burst requests are cancelled at the duration cap.
+One final request to the same target checks whether the app still answers after
+the burst; it is additional to the burst budget and has its own deadline of at
+most 5 seconds. Keep initial tries small and stop on a crash or outage. This
+checks resilience, not performance benchmarks.
+
+`load` is report-only: it starts nothing, edits nothing and leaves no file behind.
+It prints only a bounded summary and recovery status, never response bodies.
+Use isolated local test data and disposable sessions. A successful bounded burst
+on an ordinary route is a safe control and must never be reported as a hole.

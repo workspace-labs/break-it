@@ -1,4 +1,4 @@
-# Break-it · 0.3.0
+# Break-it · 0.4.0
 
 ![break-it: find the hole a hacker would find, first](media/break-it-hero.png)
 
@@ -6,8 +6,9 @@ Before release, let the **reviewer** try to break your own app on a throwaway
 local copy. Break-it helps find bad-input failures and cases where one user can
 read another user's data. Family C also finds leaked keys/passwords in files and
 old git commits, replies that expose private fields, errors that reveal internal
-details, and logs that keep private data. It reports what happened, where, and
-what to fix.
+details, and logs that keep private data. Family D helps you see if your app
+survives many users at once, safely, on a throwaway copy. It reports what
+happened, where, and what to fix.
 The builder fixes the holes; Break-it never fixes them.
 
 For Claude Code, Codex and other agents that read Agent Skills. Requires Node
@@ -34,8 +35,8 @@ node scripts/demo-shop.mjs
 ```
 
 This starts only temporary copies on a free loopback port. It tests bad-input,
-access-control and leak cases with safe controls, simulates builder fixes in
-synthetic scratch source,
+access-control, leak and bounded-load cases with safe controls, simulates builder
+fixes in synthetic scratch source,
 then tests a fresh copy again. Nothing in your real project is changed.
 
 ## The walls
@@ -47,6 +48,8 @@ then tests a fresh copy again. Nothing in your real project is changed.
 - A whole secret is never printed, saved or reported; evidence uses masked values.
 - Stop the app you started, then let the CLI delete only that run folder.
 - Keep data and app integrations local; `send` makes one bounded localhost request.
+- `load` checks resilience on that copy only: at most 2,000 burst requests,
+  50 in flight and 30 seconds, followed by one health probe.
 - Run the portable Node commands. No downloaded tools or dependencies.
 
 A copy is not an operating-system sandbox. Before starting any real app, verify
@@ -64,6 +67,7 @@ node scripts/break-it.mjs copy "PROJECT_FOLDER"
 node scripts/break-it.mjs scan RUN_ID
 node scripts/break-it.mjs send POST http://localhost:4000/login --json '{"user":"A","password":"invented"}'
 node scripts/break-it.mjs send GET http://localhost:4000/orders/6 --token LOCAL_TEST_SESSION
+node scripts/break-it.mjs load GET http://localhost:4000/health --requests 20 --concurrency 2 --duration 1
 node scripts/break-it.mjs scan RUN_ID
 node scripts/break-it.mjs seal RUN_ID
 node scripts/break-it.mjs cleanup RUN_ID
@@ -127,6 +131,24 @@ up to 2 KiB of response body, with detected secrets masked before CLI display
 and `(cut)` when truncated. A timeout or unseen
 response content is inconclusive, never evidence of a hole by itself.
 
+After the individual tries, [Family D](references/attacks-load.md) uses `load` to
+check crashes under many users, missing limits on sensitive routes, errors that
+appear only with concurrent requests and failure to recover. It reuses `send`;
+the URL must still name the throwaway copy on localhost. Start small and stop
+on an outage. This is resilience testing, not a performance benchmark.
+
+`--requests` accepts 1–2,000 (default 200), `--concurrency` accepts 1–50 (default
+10), and optional `--duration` accepts 1–30 seconds. The burst stops at whichever
+limit comes first, with a 30-second hard stop even without `--duration`. Body
+and bearer options are the same as `send` and are reused for each request.
+In-flight burst requests are cancelled at the duration cap. One final health
+request to the same route runs afterward with its own deadline of at most 5
+seconds, additional to the burst request budget. Output contains only request
+counts, status totals, completed-request latency and whether that final probe
+answered; it never prints response bodies.
+The command starts nothing, edits nothing and leaves no file behind. A normal
+route that stays healthy through the burst is a safe control, never a hole.
+
 After stopping your app, run seal, then cleanup. Cleanup prints only the path of
 a receipt file under `break-it/receipts` in your OS temporary directory, outside
 the deleted run. Report finds it by run id, checks that the run is gone and the
@@ -143,20 +165,23 @@ report receipt. Preserve the alarm; never turn it into a clean report.
 
 The CLI is a safety shell with bounded secret-pattern checks, not a complete
 security scanner. The agent adapts the [bad-user](references/attacks-bad-user.md),
-[access-control](references/attacks-other-data.md), and
-[leak](references/attacks-leaks.md) try lists to the intended change.
+[access-control](references/attacks-other-data.md),
+[leak](references/attacks-leaks.md), and [load](references/attacks-load.md)
+try lists to the intended change.
 Count completed tries, including safe controls; put inapplicable ids and reasons
 in the optional findings JSON `skipped` list and disclose inconclusive tries in
 review notes. Skips never change counts. Findings at the same file and line get
 a same-cause note. A report needs at least one completed logical try.
 A passing run proves only what was tried.
 
-## Example: orders and leaks
+## Example: orders, leaks and load
 
 The full [generated report](examples/shop-app-report.md) is real CLI output.
 Round 1 demonstrates another customer's order, input/login failures, a fake key
 kept in configuration, a profile reply exposing a password-hash field, and an
-error revealing internal details. Round 2 repeats the tries on a fresh copy of
+error revealing internal details. It also demonstrates a route that fails under
+a small burst, fails its recovery probe, and an unlimited login route. A healthy
+normal route stays unflagged. Round 2 repeats the tries on a fresh copy of
 the harness's fixed scratch source and finds no remaining holes. The original
 example app is untouched.
 
@@ -175,12 +200,12 @@ Tests need permission to open temporary localhost ports. They never contact an
 external host. `node scripts/demo-shop.mjs --write` regenerates the example report
 from real responses. No build step, package installation or account is required.
 
-How every version was tested, round by round (7 rounds, 7 independent reviews), is in
+How earlier releases were tested (7 rounds, 7 independent reviews) is in
 [TEST-EVIDENCE.md](TEST-EVIDENCE.md).
 
 ## Coming next
 
 Future owner-approved versions may add injection, other settings checks,
-floods, AI and desktop checks. They are not implemented in 0.3.0.
+AI and desktop checks. They are not implemented in 0.4.0.
 
 MIT licensed. Nothing is published, tagged or pushed by this build.

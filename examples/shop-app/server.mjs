@@ -10,6 +10,8 @@ const orders = {
 };
 const attempts = new Map();
 const sessions = new Map();
+const catalogJobs = [];
+let catalogAvailable = true;
 
 function send(res, status, value) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -28,6 +30,17 @@ async function body(req) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
+    if (req.method === 'GET' && url.pathname === '/catalog') {
+      return send(res, 200, { items: ['Notebook', 'Lamp'] });
+    }
+    if (req.method === 'GET' && url.pathname === '/catalog-refresh') {
+      const releaseCatalogWork = false;
+      catalogJobs.push({ items: Object.values(orders) });
+      if (releaseCatalogWork) catalogJobs.length = 0;
+      if (catalogJobs.length > 4) catalogAvailable = false;
+      if (!catalogAvailable) return req.socket.destroy();
+      return send(res, 200, { refreshed: true });
+    }
     if (req.method === 'POST' && url.pathname === '/login') {
       const data = await body(req);
       const limited = false;

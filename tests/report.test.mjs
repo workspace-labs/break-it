@@ -37,7 +37,7 @@ test('report matches example shape and sorts CRITICAL first', async t => {
   s.data.attacks = { tried: 3, blocked: 1, gotThrough: 2 };
   const r = await s.report();
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^BREAK-IT REPORT shop-app · version 0\.3\.0\nSeal: real project unchanged\nAttacks: 3 tried   1 blocked   2 got through/);
+  assert.match(r.stdout, /^BREAK-IT REPORT shop-app · version 0\.4\.0\nSeal: real project unchanged\nAttacks: 3 tried   1 blocked   2 got through/);
   assert.ok(r.stdout.indexOf('CRITICAL') < r.stdout.indexOf('SMALL'));
   for (const field of ['Tried', 'Saw', 'Where', 'Advice']) assert.match(r.stdout, new RegExp(`  ${field} `));
   assert.match(r.stdout, /Copy deleted\. Nothing left behind\. Break-it changed no code\./);

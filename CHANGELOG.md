@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.0] - 2026-11-07
+
+- Add Family D, Load: check whether an owner's throwaway localhost copy survives
+  many users at once and recovers afterward, with safe controls and report-only advice.
+- Add `load` through the existing `send` network boundary: at most 2,000 burst
+  requests, 50 in flight, and 30 seconds (also the default hard stop). Cancel
+  in-flight burst requests at the deadline, then make one final recovery probe
+  with its own five-second deadline. Each burst request retains that deadline too.
+- Print only bounded counts, status groups, completed-request latency statistics
+  and the recovery result; never print response bodies. Refuse malformed options
+  and reuse send's localhost, method, token-header and 64 KiB body validation.
+- Extend the synthetic shop and real two-round demo with load failures and an
+  unthrottled login, then simulate their fixes only in scratch source. Keep the
+  normal catalog route as a safe control in both rounds.
+- Preserve the existing copy, seal, cleanup, masking and reporting contracts,
+  the one-network-module wall, and the approved documents under docs/ unchanged.
+
 ## [0.3.0] - 2026-11-03
 
 - Add TEST-EVIDENCE.md: every round of 0.1.0, 0.2.0 and 0.3.0, with tests, break-tries
