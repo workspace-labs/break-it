@@ -1,5 +1,13 @@
 # Family D: Load (many users at once)
 
+## Contents
+
+- [D01: Crash under load](#d01-crash-under-load)
+- [D02: No limit on a sensitive route](#d02-no-limit-on-a-sensitive-route)
+- [D03: Errors only under load](#d03-errors-only-under-load)
+- [D04: Does not recover](#d04-does-not-recover)
+- [Safe control](#safe-control-a-normal-route-absorbs-the-burst)
+
 Check whether the owner's own app survives many users at once, safely, on a
 throwaway localhost copy. This is a bounded resilience check, not performance
 benchmarking or a live load test. Read the intended route behavior first and use
@@ -21,12 +29,32 @@ node scripts/break-it.mjs send GET http://localhost:4000/health
 node scripts/break-it.mjs load GET http://localhost:4000/health --requests 20 --concurrency 2 --duration 1
 ```
 
+A `cancelled at deadline` count is break-it's own limit and is NEVER evidence of
+a hole; if you need those requests to finish, raise `--duration` (up to 30) and
+run again.
+
 Use `--json` and `--token` for a disposable request body/session when applicable;
 the same body and bearer are reused for every request, including the probe. The
-whole UTF-8 body must fit within 64 KiB. `load` prints only counts, status totals,
-latency for completed requests and the after-burst result. It prints no response
-bodies, starts no app, edits no file and saves no output. Observe the app you
-started too; a timeout alone is inconclusive until its cause is established.
+whole UTF-8 body must fit within 64 KiB. `load` prints four bounded lines with
+sent/completed/failed/cancelled counts, status totals, latency for completed
+requests and the after-burst result. Every field appears, including zeros.
+For example, with a budget of 6 and concurrency 3, the deadline can stop the
+first three slow requests before the budget is exhausted:
+
+```text
+LOAD GET http://localhost:4000/x  requests: 3  completed: 0  failed: 0  cancelled at deadline: 3
+status: 2xx 0  3xx 0  4xx 0  5xx 0  other 0  no status 0
+latency ms: min n/a  median n/a  p95 n/a  max n/a  (completed requests)
+after burst: app answered 200
+```
+
+`completed` is the sum of 2xx, 3xx, 4xx, 5xx and other received statuses; `other`
+means below 200 or at least 600. `no status` equals genuine failures, including
+`send`'s own 5-second timeout. Cancelled requests appear only in the first line,
+never a status group. Sent = completed + failed + cancelled. The probe is separate
+from these burst counts. `load` prints no response bodies, starts no app, edits
+no file and saves no output. Observe the app you started too; a timeout alone is
+inconclusive until its cause is established.
 
 Count each logical try once, including safe controls. Record findings with the
 Dxx id, Tried, Saw, Where and Advice; Where is a real relative `file:line` in the
@@ -41,8 +69,9 @@ two causes. Stop on a crash/outage and keep cleanup/seal steps unchanged.
 - **BLOCKED:** The app stays responsive, rejects excess work cleanly if needed,
   and answers its after-burst probe.
 - **HOLE:** The bounded burst makes the app exit or stop responding: the
-  after-burst probe fails or a wave of `other/none` accompanies an observed app
-  outage. Establish that the burst caused the failure; do not call an unrelated
+  after-burst probe fails or a wave of `no status` accompanies an observed app
+  outage; cancelled requests do not count toward `no status` or this evidence.
+  Establish that the burst caused the failure; do not call an unrelated
   connection error a crash.
 - **Severity:** CRITICAL for the observed whole-app exit or outage.
 

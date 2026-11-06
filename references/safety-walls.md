@@ -123,12 +123,18 @@ refusal as `send`; it never follows redirects. Hard ceilings are concurrency
 ceilings or malformed options are refused. Without `--duration`, the burst still
 has a 30-second hard stop; stop at the first request or duration limit reached.
 In-flight burst requests are cancelled at the duration cap.
+A `cancelled at deadline` count is our own cap and is NEVER evidence of a hole;
+if those requests need to finish, raise `--duration` (up to 30) and run again.
 One final request to the same target checks whether the app still answers after
 the burst; it is additional to the burst budget and has its own deadline of at
 most 5 seconds. Keep initial tries small and stop on a crash or outage. This
 checks resilience, not performance benchmarks.
 
 `load` is report-only: it starts nothing, edits nothing and leaves no file behind.
-It prints only a bounded summary and recovery status, never response bodies.
+It prints only a four-line bounded summary and recovery status, never response
+bodies. All fields appear, including zeros: sent/completed/failed/cancelled;
+2xx/3xx/4xx/5xx/other/no status; completed-request latency; after-burst status.
+Cancelled requests appear only in the first line, never a status bucket;
+`no status` counts genuine failures, including `send`'s own 5-second timeout.
 Use isolated local test data and disposable sessions. A successful bounded burst
 on an ordinary route is a safe control and must never be reported as a hole.

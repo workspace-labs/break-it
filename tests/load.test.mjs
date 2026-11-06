@@ -43,8 +43,8 @@ test('load CLI completes failed measurements with exit zero and no response or e
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr, '');
   assert.equal(seen, 4, 'three failed burst requests and one failed recovery probe');
-  assert.match(result.stdout, /requests: 3  completed: 0  failed\/timeout: 3/);
-  assert.match(result.stdout, /status: 2xx 0  4xx 0  5xx 0  other\/none 3/);
+  assert.match(result.stdout, /requests: 3  completed: 0  failed: 3  cancelled at deadline: 0/);
+  assert.match(result.stdout, /status: 2xx 0  3xx 0  4xx 0  5xx 0  other 0  no status 3/);
   assert.match(result.stdout, /latency ms: min n\/a  median n\/a  p95 n\/a  max n\/a/);
   assert.match(result.stdout, /after burst: app did not answer\n$/);
   assert.equal(result.stdout.trimEnd().split('\n').length, 4);
@@ -127,7 +127,7 @@ test('load stops at exactly N burst requests, caps concurrency and probes once a
   assert.equal(result.sent, 11);
   assert.equal(result.completed, 11);
   assert.equal(result.failed, 0);
-  assert.deepEqual(result.statuses, { '2xx': 11, '4xx': 0, '5xx': 0, 'other/none': 0 });
+  assert.deepEqual(result.statuses, { '2xx': 11, '3xx': 0, '4xx': 0, '5xx': 0, other: 0, 'no status': 0 });
   assert.equal(result.afterBurst.status, 201);
   assert.equal(seen, 12, 'N burst calls plus one uncounted health probe');
   assert.ok(maximum <= 3, `at most C in flight, observed ${maximum}`);
@@ -151,8 +151,8 @@ test('load CLI prints only a bounded four-line summary, never response bodies', 
   assert.ok(!result.stdout.includes('x'.repeat(100)));
   assert.ok(Buffer.byteLength(result.stdout) < 1024);
   assert.equal(result.stdout.trimEnd().split('\n').length, 4);
-  assert.match(result.stdout, /^LOAD GET .*requests: 7\s+completed: 7\s+failed\/timeout: 0\n/);
-  assert.match(result.stdout, /status: 2xx 7\s+4xx 0\s+5xx 0\s+other\/none 0/);
+  assert.match(result.stdout, /^LOAD GET .*requests: 7\s+completed: 7\s+failed: 0\s+cancelled at deadline: 0\n/);
+  assert.match(result.stdout, /status: 2xx 7\s+3xx 0\s+4xx 0\s+5xx 0\s+other 0\s+no status 0/);
   assert.match(result.stdout, /latency ms: min [\d.]+\s+median [\d.]+\s+p95 [\d.]+\s+max [\d.]+\s+\(completed requests\)/);
   assert.match(result.stdout, /after burst: app answered 200\n$/);
 });
@@ -170,7 +170,7 @@ test('load records status families and transport failures separately from comple
   assert.equal(result.sent, 5);
   assert.equal(result.completed, 4);
   assert.equal(result.failed, 1);
-  assert.deepEqual(result.statuses, { '2xx': 1, '4xx': 1, '5xx': 1, 'other/none': 2 });
+  assert.deepEqual(result.statuses, { '2xx': 1, '3xx': 1, '4xx': 1, '5xx': 1, other: 0, 'no status': 1 });
   assert.equal(result.afterBurst.status, 204);
 });
 
@@ -209,7 +209,8 @@ test('load never follows localhost or external redirects', async t => {
   });
   for (const route of ['/local', '/external']) {
     const result = await runLoad('GET', url + route, { requests: 3, concurrency: 2 });
-    assert.equal(result.statuses['other/none'], 3);
+    assert.equal(result.statuses['3xx'], 3);
+    assert.equal(result.statuses['no status'], 0);
     assert.equal(result.afterBurst.status, 302);
   }
   assert.equal(destinations, 0);
@@ -226,7 +227,8 @@ test('load duration one aborts in-flight burst requests promptly and then probes
   const elapsed = performance.now() - start;
   assert.equal(result.sent, 2);
   assert.equal(result.completed, 0);
-  assert.equal(result.failed, 2);
+  assert.equal(result.failed, 0);
+  assert.equal(result.cancelled, 2);
   assert.equal(result.afterBurst.status, 200);
   assert.equal(seen, 3);
   assert.ok(elapsed >= 900 && elapsed < 3000, `one-second burst elapsed ${elapsed} ms`);
@@ -243,6 +245,7 @@ test('load preserves send five-second per-request deadline and still completes m
   const elapsed = performance.now() - start;
   assert.equal(result.failed, 1);
   assert.equal(result.sent, 1);
+  assert.equal(result.cancelled, 0);
   assert.equal(result.afterBurst.status, 200);
   assert.ok(elapsed >= 4800 && elapsed < 8000, `send deadline elapsed ${elapsed} ms`);
 });
@@ -259,7 +262,7 @@ test('load has an implicit thirty-second hard stop without --duration', { timeou
   const elapsed = performance.now() - start;
   assert.ok(elapsed >= 29000 && elapsed < 33500, `hard stop elapsed ${elapsed} ms`);
   assert.ok(result.sent < 2000);
-  assert.equal(result.completed + result.failed, result.sent);
+  assert.equal(result.completed + result.failed + result.cancelled, result.sent);
   assert.equal(arrivals.length, result.sent + 1);
   assert.ok(arrivals.slice(0, -1).every(time => time < 30250), 'no burst work after the hard stop');
   assert.equal(result.afterBurst.status, 200);

@@ -48,8 +48,8 @@ export async function runLoad(method, input, inputOptions = {}) {
   catch (error) {
     throw new Error(error.message.startsWith('Refused:') ? error.message : `Refused: ${error.message}`);
   }
-  const summary = { method: method.toUpperCase(), url: String(input), sent: 0, completed: 0, failed: 0,
-    statuses: { '2xx': 0, '4xx': 0, '5xx': 0, 'other/none': 0 },
+  const summary = { method: method.toUpperCase(), url: String(input), sent: 0, completed: 0, failed: 0, cancelled: 0,
+    statuses: { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, other: 0, 'no status': 0 },
     latency: { min: null, median: null, p95: null, max: null }, afterBurst: {} };
   const times = [];
   const controller = new AbortController();
@@ -66,12 +66,16 @@ export async function runLoad(method, input, inputOptions = {}) {
         summary.completed++;
         times.push(performance.now() - started);
         const group = response.status >= 200 && response.status < 300 ? '2xx' :
+          response.status >= 300 && response.status < 400 ? '3xx' :
           response.status >= 400 && response.status < 500 ? '4xx' :
-          response.status >= 500 && response.status < 600 ? '5xx' : 'other/none';
+          response.status >= 500 && response.status < 600 ? '5xx' : 'other';
         summary.statuses[group]++;
-      } catch {
-        summary.failed++;
-        summary.statuses['other/none']++;
+      } catch (error) {
+        if (error.message === 'Refused: request stopped at the load deadline.') summary.cancelled++;
+        else {
+          summary.failed++;
+          summary.statuses['no status']++;
+        }
       }
     }
   }
@@ -104,8 +108,8 @@ export function formatLoad(summary) {
   const url = summary.url.length > 512 ? summary.url.slice(0, 509) + '...' : summary.url;
   const method = summary.method.length > 32 ? summary.method.slice(0, 29) + '...' : summary.method;
   return [
-    `LOAD ${method} ${url}  requests: ${summary.sent}  completed: ${summary.completed}  failed/timeout: ${summary.failed}`,
-    `status: 2xx ${status['2xx']}  4xx ${status['4xx']}  5xx ${status['5xx']}  other/none ${status['other/none']}`,
+    `LOAD ${method} ${url}  requests: ${summary.sent}  completed: ${summary.completed}  failed: ${summary.failed}  cancelled at deadline: ${summary.cancelled}`,
+    `status: 2xx ${status['2xx']}  3xx ${status['3xx']}  4xx ${status['4xx']}  5xx ${status['5xx']}  other ${status.other}  no status ${status['no status']}`,
     `latency ms: min ${ms(latency.min)}  median ${ms(latency.median)}  p95 ${ms(latency.p95)}  max ${ms(latency.max)}  (completed requests)`,
     `after burst: ${afterBurst.status ? `app answered ${afterBurst.status}` : 'app did not answer'}`,
   ].join('\n');

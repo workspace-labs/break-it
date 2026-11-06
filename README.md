@@ -143,9 +143,26 @@ limit comes first, with a 30-second hard stop even without `--duration`. Body
 and bearer options are the same as `send` and are reused for each request.
 In-flight burst requests are cancelled at the duration cap. One final health
 request to the same route runs afterward with its own deadline of at most 5
-seconds, additional to the burst request budget. Output contains only request
-counts, status totals, completed-request latency and whether that final probe
-answered; it never prints response bodies.
+seconds, additional to the burst request budget. Output stays at four bounded
+lines with sent/completed/failed/cancelled counts, status totals, latency for
+completed burst responses and whether that final probe answered; it never prints
+response bodies. Every field appears, including zeros. For example:
+
+```text
+LOAD GET http://localhost:4000/x  requests: 3  completed: 0  failed: 0  cancelled at deadline: 3
+status: 2xx 0  3xx 0  4xx 0  5xx 0  other 0  no status 0
+latency ms: min n/a  median n/a  p95 n/a  max n/a  (completed requests)
+after burst: app answered 200
+```
+
+A `cancelled at deadline` count is break-it's own limit and is NEVER evidence of
+a hole; if you need those requests to finish, raise `--duration` (up to 30) and
+run again. Cancelled requests appear only in the first line. The status tally
+groups completed responses into 2xx, 3xx, 4xx, 5xx and other (below 200 or 600+);
+`no status` counts genuine failures, including `send`'s own 5-second timeout.
+Requests means actually sent; the duration limit can stop a burst before its
+requested budget is exhausted. Sent = completed + failed + cancelled; the final
+probe is separate.
 The command starts nothing, edits nothing and leaves no file behind. A normal
 route that stays healthy through the burst is a safe control, never a hole.
 

@@ -16,6 +16,13 @@
   normal catalog route as a safe control in both rounds.
 - Preserve the existing copy, seal, cleanup, masking and reporting contracts,
   the one-network-module wall, and the approved documents under docs/ unchanged.
+- Fix round 1 (2026-11-07): distinguish the tool's duration cancellations from
+  genuine transport failures and send's five-second request timeouts; show
+  `cancelled at deadline` separately so our cap cannot look like an app fault.
+- Fix round 1 (2026-11-07): give redirects their own 3xx status group, separate
+  other received statuses from `no status` failures, and exclude cancellations
+  from status totals. Update the four-line summary, guidance and regression
+  tests. Version remains 0.4.0; all caps and the send-only boundary are unchanged.
 
 ## [0.3.0] - 2026-11-03
 

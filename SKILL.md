@@ -86,8 +86,16 @@ the app's working folder separately. Do not install tools or dependencies.
    node scripts/break-it.mjs load GET http://localhost:4000/health --requests 20 --concurrency 2 --duration 1
    ```
 
-   `load` reuses `send` and prints only counts, status totals, completed-request
-   latency and one final after-burst health probe, never response bodies. The
+   A `cancelled at deadline` count is break-it's own limit and is NEVER evidence
+   of a hole; if you need those requests to finish, raise `--duration` (up to 30)
+   and run again.
+
+   `load` reuses `send` and prints four bounded lines with requests sent,
+   completed, failed and cancelled-at-deadline counts; status totals for 2xx,
+   3xx, 4xx, 5xx, other and no status; completed-request latency; and one final
+   after-burst health probe, never response bodies. All fields appear, including
+   zeros. Cancelled requests are excluded from every status total; no status
+   counts only genuine failures, including `send`'s own 5-second timeout. The
    burst stops at the request budget or duration limit, whichever comes first.
    Hard ceilings are 2,000 burst requests, 50 in flight and 30 seconds, including
    an implicit 30-second stop when `--duration` is omitted. Defaults are 200
