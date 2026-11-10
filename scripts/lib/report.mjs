@@ -3,10 +3,10 @@ import path from 'node:path';
 import { runPath, validId } from './runs.mjs';
 import { verifySeal } from './seal.mjs';
 import { loadReceipt, deleteReceipt } from './receipts.mjs';
-import { findSecrets, safeLabel } from './leaks.mjs';
+import { findSecrets, findNestedReview, safeLabel } from './leaks.mjs';
 
 function guardSecrets(value, id) {
-  if (typeof value === 'string' && findSecrets(value).length) {
+  if (typeof value === 'string' && (findSecrets(value).length || findNestedReview(value).length)) {
     throw new Error(`Refused: finding ${safeLabel(id)} contains an unmasked secret; use the masked form.`);
   }
   if (value && typeof value === 'object') {

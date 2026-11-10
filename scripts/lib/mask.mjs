@@ -1,4 +1,4 @@
-import { findSecrets, maskValue, safeLabel } from './leaks.mjs';
+import { findLeakEvidence, maskValue, safeLabel } from './leaks.mjs';
 
 const inputLimit = 20 * 1024 * 1024;
 
@@ -13,7 +13,7 @@ function patchText(text) {
 }
 
 export function maskText(text) {
-  const hits = findSecrets(patchText(text));
+  const hits = findLeakEvidence(patchText(text));
   if (!hits.length) return '';
   const output = [];
   let commit = '';

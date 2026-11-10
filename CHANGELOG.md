@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.1] - 2026-11-10
+
+### Fixed
+
+- Find string values nested beneath credential names, even when their own keys
+  are not sensitive. Stop at the parent's matching close brace or bracket,
+  respect quoted strings, and bound depth and repeated scanning.
+- Separate settings-like inner keys into a masked “Check by eye” list, so a
+  possible secret under a metadata key cannot produce a false `No secrets found`.
+  Redaction masks those values too; the existing confirmed-hit exit codes stay unchanged.
+- Document the four nested-value filters and the incomplete metadata list;
+  add nested-parent, boundary, masking and performance regression evidence.
+
 ## [0.4.0] - 2026-11-07
 
 - Add Family D, Load: check whether an owner's throwaway localhost copy survives

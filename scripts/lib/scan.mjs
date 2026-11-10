@@ -2,7 +2,7 @@ import { constants } from 'node:fs';
 import { readdir, lstat, realpath, open } from 'node:fs/promises';
 import path from 'node:path';
 import { readSeal } from './runs.mjs';
-import { findSecrets, maskValue, safeLabel } from './leaks.mjs';
+import { findLeakEvidence, maskValue, safeLabel } from './leaks.mjs';
 
 const windowSize = 1024 * 1024;
 const overlapSize = 4 * 1024;
@@ -21,6 +21,7 @@ async function scanFile(file, relative) {
   const sizeNote = `Skipped for size (over 20 MiB): ${label}`;
   const handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
   const lines = [];
+  const reviewLines = [];
   let reportedSpans = [];
   const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
   let position = 0;
@@ -49,7 +50,7 @@ async function scanFile(file, relative) {
       const tailStart = text.length - tail.length;
       const nextBase = characterBase + tailStart;
       const nextSpans = reportedSpans.filter(span => span.end > nextBase);
-      for (const hit of findSecrets(text)) {
+      for (const hit of findLeakEvidence(text)) {
         if (!final && hit.index + hit.value.length === text.length) {
           // Never publish a truncated value. The next window supplies its end.
           if (hit.index < tailStart) {
@@ -63,7 +64,9 @@ async function scanFile(file, relative) {
         // provider token. Retain spans, not just starts, across that boundary.
         if (reportedSpans.some(span => absoluteIndex < span.end && absoluteEnd > span.start)) continue;
         if (absoluteEnd > nextBase) nextSpans.push({ start: absoluteIndex, end: absoluteEnd });
-        lines.push(`${label}:${lineBase + hit.line - 1}  ${hit.pattern}  ${maskValue(hit.value)}`);
+        if (hit.byEye) {
+          reviewLines.push(`  line ${lineBase + hit.line - 1}  ${safeLabel(hit.parent)}.${safeLabel(hit.key)} = ${maskValue(hit.value)}`);
+        } else lines.push(`${label}:${lineBase + hit.line - 1}  ${hit.pattern}  ${maskValue(hit.value)}`);
       }
       if (final) break;
       for (let i = 0; i < tailStart; i++) if (text[i] === '\n') lineBase++;
@@ -74,7 +77,11 @@ async function scanFile(file, relative) {
     }
     // A growing file is still bounded, and no partial results escape this file.
     if ((await handle.stat()).size > fileLimit) return { lines: [sizeNote], found: false };
-    return { lines, found: lines.length > 0 };
+    const found = lines.length > 0;
+    if (reviewLines.length) {
+      lines.push(`Check by eye — values under credential names (inner key looks like settings): ${label}`, ...reviewLines);
+    }
+    return { lines, found, reviewed: reviewLines.length > 0 };
   } finally { await handle.close(); }
 }
 
@@ -87,6 +94,7 @@ export async function scanRun(id) {
   }
   const lines = [];
   let found = false;
+  let reviewed = false;
   async function walk(folder, prefix = '') {
     for (const entry of (await readdir(folder)).sort()) {
       if (entry === '.git') continue;
@@ -105,10 +113,11 @@ export async function scanRun(id) {
         const result = await scanFile(file, relative);
         for (const line of result.lines) lines.push(line);
         found ||= result.found;
+        reviewed ||= result.reviewed;
       }
     }
   }
   await walk(root);
-  if (!found) lines.push('No secrets found');
+  if (!found) lines.push(reviewed ? 'No confirmed secrets — check the values above by eye' : 'No secrets found');
   return lines.join('\n');
 }

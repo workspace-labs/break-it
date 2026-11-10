@@ -1,4 +1,4 @@
-# Break-it · 0.4.0
+# Break-it · 0.4.1
 
 ![break-it: find the hole a hacker would find, first](media/break-it-hero.png)
 
@@ -92,8 +92,11 @@ overlap, so a key near a window boundary is reported once with its actual line.
 Files larger than 20 MiB get a named skip note. A candidate too long to retain
 across a window boundary also makes that file a named skip, rather than showing
 a truncated value. Treat skipped files as untested. Output has only the relative
-filename, line, pattern name and masked value. No matches means
-`No secrets found` with exit 0 for the inspected text, not proof of complete safety.
+filename, line, pattern name and masked value, plus a masked “Check by eye” list
+for settings-like values beneath credential names. Read that list too. With only
+by-eye items it ends with `No confirmed secrets — check the values above by eye`;
+with neither hits nor by-eye items it prints `No secrets found`. Exit 0 describes
+the inspected text, not proof of complete safety.
 See [the exact patterns and limits](references/leak-patterns.md). Documented
 placeholders such as `.env.example` with `KEY=your-key-here` stay unflagged; that
 filename does not excuse a real-looking secret.
@@ -103,8 +106,9 @@ header assignments, including names such as `DB_PASSWORD`, `client_secret`,
 `accessToken` and `apiKey`. Code that reads an environment variable, template
 references, placeholders and prose without an assignment are ignored. The same
 rule protects history masking and report evidence; see the exact rules above.
-Nested object fields are inspected even beneath a sensitive parent such as
-`auth`; an outer object prefix must not hide its inner password. Seal and copy
+Nested string values inherit sensitivity from a parent such as `password`,
+within its matching container; settings-like inner keys go to the by-eye list.
+See the four filters and limits in the pattern reference. Seal and copy
 diagnostics escape filename control characters so names cannot forge status lines.
 
 For C02, read the copy's history with plain git and pipe it straight into `mask`:
@@ -227,6 +231,6 @@ regression audit and merge verification are recorded in
 ## Coming next
 
 Future owner-approved versions may add injection, other settings checks,
-AI and desktop checks. They are not implemented in 0.4.0.
+AI and desktop checks. They are not implemented in 0.4.1.
 
 MIT licensed.

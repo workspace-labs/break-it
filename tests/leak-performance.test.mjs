@@ -19,6 +19,8 @@ function timedFind(mode, timeout = 3500) {
     const seed = Buffer.from('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789').toString('base64');
     const nestedQuoted = '+token=\\\\"';
     const input = mode === 'base64' ? seed.repeat(Math.ceil(size / seed.length)).slice(0, size)
+      : mode === 'sibling-parents' ? Array.from({ length: 2000 }, (_, i) => 'password={child:{value:"sibling-SYNTHETIC-' + i.toString().padStart(4, '0') + '-0123456789",note:"' + 'ordinary words '.repeat(29) + '"}}').join('\\n').padEnd(size, ' ').slice(0, size)
+      : mode === 'deep-parent' ? 'password={' + 'child:{'.repeat(63) + 'value:"${value}",note:"' + ' '.repeat(size - ('password={' + 'child:{'.repeat(63) + 'value:"${value}",note:"' + '"' + '}'.repeat(64)).length) + '"' + '}'.repeat(64)
       : mode === 'dotted' ? 'a.b.c.d.'.repeat(Math.ceil(size / 8)).slice(0, size)
       : mode === 'after' ? 'a'.repeat(500000) + ' token="${value}"'
       : mode === 'nested' ? 'token=+'.repeat(Math.ceil(size / 7))
@@ -70,6 +72,18 @@ for (const mode of ['nested', 'whitespace', 'punctuation', 'jwt-no-dots', 'jwt-o
     } else if (mode.startsWith('jwt-') || mode.includes('reads')) {
       assert.equal(observed.hits.length, 0, 'malformed values and ignored reads have no held credential');
     }
+  });
+}
+
+for (const [mode, count] of [['sibling-parents', 2000], ['deep-parent', 1]]) {
+  test(`nested parents one MiB ${mode} stays below two seconds`, t => {
+    const result = timedFind(mode, 3500);
+    assert.ok(!result.error, 'bounded child finishes without hanging');
+    assert.equal(result.status, 0, 'nested matching child exits successfully');
+    const observed = JSON.parse(result.stdout);
+    t.diagnostic(`${mode}: ${observed.elapsed.toFixed(2)} ms for one MiB`);
+    assert.ok(observed.elapsed < 2000, 'each character is examined a bounded number of times');
+    assert.equal(observed.hits.length, count, 'every inherited value is found once');
   });
 }
 

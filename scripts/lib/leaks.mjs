@@ -38,26 +38,134 @@ function sensitiveName(name) {
     ['api key', 'private key', 'password hash'].includes(`${word} ${words[index + 1]}`));
 }
 
+const metadataKeys = new Set(['type', 'algorithm', 'provider', 'source', 'strategy', 'endpoint',
+  'label', 'description', 'policy', 'scheme', 'format', 'kind', 'mode', 'url', 'uri', 'env']);
+
+// One iterative, string-aware walk per outer credential container. Keep at most
+// 64 frames; beyond that, count delimiters but leave detection to scalar rules.
+function nestedValues(text, start, parent, minimumLength, hits, review, quotedSpans) {
+  const frames = [];
+  const word = /[A-Za-z0-9_$][\w$.-]*/y;
+  let depth = 0;
+  let cursor = start;
+  while (cursor < text.length) {
+    const char = text[cursor];
+    if (char === '{' || char === '[') {
+      if (depth < 64) frames.push({ close: char === '{' ? '}' : ']',
+        key: frames.at(-1)?.key || '', array: char === '[' });
+      depth++;
+      cursor++;
+      continue;
+    }
+    if (char === '}' || char === ']') {
+      // A mismatched close cannot justify inheriting into later siblings.
+      if (depth <= 64 && frames.at(-1)?.close !== char) return cursor + 1;
+      if (depth <= 64) frames.pop();
+      depth--;
+      cursor++;
+      if (!depth) return cursor;
+      continue;
+    }
+    const frame = depth <= 64 ? frames.at(-1) : undefined;
+    if (char === ',') {
+      if (frame && !frame.array) frame.key = '';
+      cursor++;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === '`') {
+      const quoteStart = cursor++;
+      const valueStart = cursor;
+      while (cursor < text.length && text[cursor] !== char && !/[\r\n]/.test(text[cursor])) {
+        cursor += text[cursor] === '\\' && cursor + 1 < text.length ? 2 : 1;
+      }
+      const value = text.slice(valueStart, cursor);
+      const closed = text[cursor] === char;
+      if (closed) cursor++;
+      let after = cursor;
+      while (/\s/.test(text[after] || '\0')) after++;
+      if (closed && (text[after] === ':' || text[after] === '=')) {
+        quotedSpans.push({ start: quoteStart, end: cursor, key: true });
+        let key = value;
+        if (char === '"') {
+          try { key = JSON.parse(text.slice(quoteStart, cursor)); } catch { /* literal label */ }
+        }
+        if (frame) frame.key = key;
+        cursor = after + 1;
+      } else {
+        // Bound scalar fallback to this token, so text inside it cannot open
+        // a new container or consume unrelated following fields.
+        quotedSpans.push({ start: quoteStart, end: cursor, closed });
+        if (frame && !/\s/.test(value) && !placeholder(value, true) &&
+            Array.from(value).length >= minimumLength) {
+          const item = { pattern: `generic nested ${parent}`, value, index: valueStart };
+          if (metadataKeys.has(frame.key.toLowerCase())) {
+            review.push({ ...item, parent, key: frame.key });
+          } else hits.push(item);
+        }
+        cursor = after;
+      }
+      continue;
+    }
+    word.lastIndex = cursor;
+    const token = word.exec(text);
+    if (token) {
+      cursor = word.lastIndex;
+      let after = cursor;
+      while (/\s/.test(text[after] || '\0')) after++;
+      if (frame && (text[after] === ':' || text[after] === '=') &&
+          text[after + 1] !== '=' && text[after + 1] !== '>') {
+        frame.key = token[0];
+        cursor = after + 1;
+      } else cursor = after;
+    } else cursor++;
+  }
+  return cursor;
+}
+
 function genericSecrets(text, minimumLength) {
   const hits = [];
+  const review = [];
+  const quotedSpans = [];
+  let quoteIndex = 0;
   const fields = /(?<![\w$.-])([A-Za-z_$][\w$.-]{0,127})(?![\w$.-])["']?\s*[:=](?!=|>)(\s*)/g;
   const quotedValue = /(["'`])((?:\\[^\r\n]|(?!\1)[^\\\r\n])*)(?:\1|$)/y;
   const unquotedValue = /[^\s#]+/y;
   const maskedValue = /(?:.{3}….{4}|••••) \(\d+ chars\)/y;
   let unquotedEnd = 0;
   let arrayEnd = 0;
+  let containerEnd = 0;
   let field;
   while ((field = fields.exec(text))) {
+    let fieldLimit = text.length;
+    let inQuotedValue = false;
+    while (quoteIndex < quotedSpans.length && quotedSpans[quoteIndex].end <= field.index) quoteIndex++;
+    if (quoteIndex < quotedSpans.length) {
+      const span = quotedSpans[quoteIndex];
+      if (field.index >= span.start) {
+        if (span.key) {
+          if (field.index !== span.start + 1 || field[1].length !== span.end - span.start - 2) continue;
+        } else {
+          fieldLimit = span.end - Number(span.closed);
+          inQuotedValue = true;
+        }
+      }
+    }
     if (!sensitiveName(field[1])) continue;
     const start = field.index + field[0].length;
+    if (start >= fieldLimit) continue;
+    const fieldText = fieldLimit < text.length ? text.slice(0, fieldLimit) : text;
     const quoted = /["'`]/.test(text[start] || '\0');
     // A retained array prefix already masks values inside this span. Keep
     // looking for names whose value begins beyond it without rescanning tails.
     if (start < arrayEnd) continue;
-    // An object holds fields, not a scalar credential. Do not consume an inner
-    // field name as its parent's unquoted value (JSON commonly has no space
-    // after the opening brace). The same applies to arrays starting in objects.
-    if (!quoted && /^\[*\{\s*(?:(["'])(?:\\[^\r\n]|(?!\1)[^\\\r\n])*\1|[A-Za-z0-9_$][\w$.-]*)\s*[:=]/.test(text.slice(start))) continue;
+    // Preserve scalar/brace-wrapped values, but inherit sensitivity inside
+    // objects and arrays of objects. Never re-walk an already covered span.
+    if (!quoted && !inQuotedValue && /^(?:\[\s*)*\{\s*(?:(?:(["'])(?:\\[^\r\n]|(?!\1)[^\\\r\n])*\1|[A-Za-z0-9_$][\w$.-]*)\s*[:=]|\})/.test(fieldText.slice(start))) {
+      if (start >= containerEnd && fieldLimit === text.length) {
+        containerEnd = nestedValues(text, start, field[1].toLowerCase(), minimumLength, hits, review, quotedSpans);
+      }
+      continue;
+    }
     // An empty unquoted .env value ends at its newline. Preserve the older
     // quoted case where whitespace between '=' and the literal spans lines.
     if (!quoted && /[\r\n]/.test(field[2])) continue;
@@ -65,32 +173,32 @@ function genericSecrets(text, minimumLength) {
     // Consume that whole form before the whitespace-delimited value rule.
     if (!quoted) {
       maskedValue.lastIndex = start;
-      if (maskedValue.exec(text)) { fields.lastIndex = maskedValue.lastIndex; continue; }
+      if (maskedValue.exec(fieldText)) { fields.lastIndex = maskedValue.lastIndex; continue; }
     }
     let match;
     if (quoted) {
       quotedValue.lastIndex = start;
-      match = quotedValue.exec(text);
+      match = quotedValue.exec(fieldText);
     } else if (start < unquotedEnd) {
       // Ignored minified reads can resume inside the same whitespace/# run.
       // Reuse its known end instead of matching the whole suffix each time.
-      match = [text.slice(start, unquotedEnd)];
+      match = [text.slice(start, Math.min(unquotedEnd, fieldLimit))];
     } else {
       unquotedValue.lastIndex = start;
-      match = unquotedValue.exec(text);
+      match = unquotedValue.exec(fieldText);
       if (match) unquotedEnd = unquotedValue.lastIndex;
     }
     if (!match) {
       // A failed quoted value has already been read through its line. Do not
       // retry its escaped field-like contents from every interior position.
       if (quoted) {
-        const newline = text.indexOf('\n', start);
-        fields.lastIndex = newline < 0 ? text.length : newline + 1;
+        const newline = fieldText.indexOf('\n', start);
+        fields.lastIndex = newline < 0 ? fieldLimit : newline + 1;
       }
       continue;
     }
     const value = quoted ? match[2] : match[0];
-    const parsedEnd = quoted ? quotedValue.lastIndex : unquotedEnd;
+    const parsedEnd = Math.min(quoted ? quotedValue.lastIndex : unquotedEnd, fieldLimit);
     fields.lastIndex = parsedEnd;
     if (!quoted && text[start] === '[') {
       // Preserve existing scalar-array masking, but allow an inner field name
@@ -110,7 +218,7 @@ function genericSecrets(text, minimumLength) {
         Array.from(value).length < minimumLength) continue;
     hits.push({ pattern: `generic ${field[1].toLowerCase()}`, value, index: start + (quoted ? 1 : 0) });
   }
-  return hits;
+  return { hits, review };
 }
 
 function jwtSecrets(text) {
@@ -142,7 +250,7 @@ export function maskValue(value) {
 }
 
 export function findSecrets(text, { minimumLength = 9 } = {}) {
-  const candidates = genericSecrets(text, minimumLength);
+  const candidates = genericSecrets(text, minimumLength).hits;
   for (const [name, pattern] of patterns) {
     for (const match of text.matchAll(pattern)) {
       const value = match[0];
@@ -151,6 +259,10 @@ export function findSecrets(text, { minimumLength = 9 } = {}) {
     }
   }
   for (const hit of jwtSecrets(text)) candidates.push(hit);
+  return mergeHits(text, candidates);
+}
+
+function mergeHits(text, candidates) {
   // Merge overlapping spans: an assignment must not hide a longer private block.
   candidates.sort((a, b) => a.index - b.index || b.value.length - a.value.length);
   const merged = [];
@@ -159,6 +271,12 @@ export function findSecrets(text, { minimumLength = 9 } = {}) {
     if (previous && hit.index < previous.index + previous.value.length) {
       const end = Math.max(previous.index + previous.value.length, hit.index + hit.value.length);
       previous.value = text.slice(previous.index, end);
+      // A review span can surround a provider hit. Merge its full value for
+      // masking, retaining the confirmed classification and provider name.
+      if (previous.byEye && !hit.byEye) {
+        previous.byEye = false;
+        previous.pattern = hit.pattern;
+      }
       if (hit.pattern === 'private key') previous.pattern = hit.pattern;
     } else merged.push({ ...hit });
   }
@@ -172,10 +290,21 @@ export function findSecrets(text, { minimumLength = 9 } = {}) {
   return hits;
 }
 
+export function findNestedReview(text, { minimumLength = 9 } = {}) {
+  return mergeHits(text, genericSecrets(text, minimumLength).review);
+}
+
+// Output paths share overlap handling so review evidence cannot hide a
+// confirmed provider token or expose a surrounding, possibly secret value.
+export function findLeakEvidence(text, options) {
+  return mergeHits(text, [...findSecrets(text, options),
+    ...findNestedReview(text, options).map(hit => ({ ...hit, byEye: true }))]);
+}
+
 export function redactSecrets(text, options) {
   let output = '';
   let start = 0;
-  for (const hit of findSecrets(text, options)) {
+  for (const hit of findLeakEvidence(text, options)) {
     output += text.slice(start, hit.index) + maskValue(hit.value);
     start = hit.index + hit.value.length;
   }

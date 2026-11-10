@@ -35,6 +35,9 @@ run only on the owner's throwaway copy or on text piped from that copy.
   value with `=` or `:`, under the exact rules below. Candidates need at least
   9 characters. Output names the full field in lowercase, such as
   `generic db_password` or `generic apikey`.
+- **generic nested `<parent>`:** a string value inside an object or array of
+  objects assigned to a sensitive parent, such as `password={value:"…"}`.
+  The parent name is lowercased; the nested-value filters below apply.
 
 Word boundaries delimit provider shapes. When matches
 overlap, the containing assignment or private-key block wins over a provider
@@ -82,12 +85,38 @@ token expired today” has no assignment and never matches.
   CLI reply display also masks shorter named credential values; 8 characters
   or fewer use bullets.
 
-Object literals are containers: their inner named assignments are inspected
-instead of consuming an inner field name as the parent's scalar value. Quoted
-object keys may contain punctuation, Unicode or escaped delimiters; they are not
-limited to the generic credential-name length. Arrays with object entries also
-leave inner named fields visible to inspection. Existing scalar-array and
+Object literals and arrays of objects beneath sensitive names are containers:
+their string values inherit the parent's sensitivity, even when an inner key
+is not sensitive, as in `password={value:"…"}` or `apiKey=[{k:"…"}]`.
+The scan ends at the matching close brace or bracket; braces inside quoted
+strings do not count. If no matching close exists in the current text, it stops
+at text end and considers the values seen so far. It never invents a container
+span beyond that text or attributes later sibling fields to a closed parent.
+Quoted object keys may contain punctuation, Unicode or escaped delimiters; they
+are not limited to the generic credential-name length. Existing scalar-array and
 brace-wrapped scalar candidates retain their masking behavior.
+
+Each inner string value must pass these four filters to become a confirmed
+`generic nested <parent>` hit:
+
+1. At least `minimumLength` characters (normally 9).
+2. No whitespace.
+3. Not one of the existing placeholders or reference forms described here.
+4. Its inner key is not a metadata key: `type`, `algorithm`, `provider`, `source`,
+   `strategy`, `endpoint`, `label`, `description`, `policy`, `scheme`, `format`,
+   `kind`, `mode`, `url`, `uri`, `env`.
+
+Values failing filters 1–3 are silently ignored. A value passing those filters
+under a metadata key goes to the masked by-eye list instead of becoming a
+generic hit. The metadata list can never be complete: a real secret stored under
+`source` lands only in that list, which is exactly why the list exists. Read it
+before deciding what the result means. Independent provider-format matches still
+qualify as confirmed hits anywhere, including beneath metadata keys.
+Shared redaction masks by-eye values as well as confirmed hits.
+
+Nested container inspection is bounded to 64 levels. Deeper content is left to
+the existing scalar rules. A parent span is walked without repeatedly rescanning
+it for each inner sensitive name; this also bounds malformed and unclosed input.
 
 Assignment-like text inside an already consumed quoted scalar remains part of that
 value; it is not retried as a second generic field. If a quoted value cannot be
@@ -127,6 +156,15 @@ Never print or store the original value in findings, reports or review notes.
 `scan <run-id>` reads only that guarded run's `copy`. A hit is
 `<relative file>:<line>  <pattern name>  <masked value>`. `.git` is skipped for
 C02, binaries are detected per window, and symbolic links are not followed.
+After a file's confirmed hits, any by-eye items appear under one heading per file:
+
+```text
+Check by eye — values under credential names (inner key looks like settings): <file>
+  line <n>  <parent>.<innerkey> = <masked value>
+```
+
+Every by-eye value uses the same `maskValue` format as a confirmed hit; names
+escape control characters. By-eye items alone do not change the exit code.
 Text files up to 20 MiB are read in 1 MiB windows with at most 4 KiB of overlap,
 starting on a complete UTF-8 character. Hits repeated
 in overlap are emitted once, with line numbers relative to the whole file.
@@ -137,9 +175,13 @@ published. If an unfinished secret candidate crosses a window boundary and
 starts before the retained overlap, the whole file is marked incomplete with
 `Skipped long boundary-spanning match (over 4 KiB overlap): <file>` instead of
 printing a truncated value. Treat a skipped file as untested.
-`No secrets found` with
-exit 0 means only that the inspected text had no matching candidate; it does not
-erase skip notes or certify the project.
+An open parent at a window boundary is inspected only through the available
+text; container context beyond the retained overlap is not carried into later
+windows. Do not treat this bounded window coverage as a complete object parse.
+`No secrets found` is printed only when there are zero confirmed hits and zero
+by-eye items. With only by-eye items, the final line is
+`No confirmed secrets — check the values above by eye`.
+Exit 0 does not erase skip notes or certify the project.
 
 `mask` reads stdin up to 20 MiB, stops with a plain note at that cap, and
 prints only masked hits. With git patch input, each hit includes the nearest

@@ -3,7 +3,7 @@ name: break-it
 description: "Use when an independent reviewer asks to break, attack, or stress-test their own project before release, on a throwaway localhost copy. Tests bad input, access control, resilience under bounded load, and leaks: secrets in files/history, over-sharing replies, error details and logs. Reports holes. Never for the builder testing their own delivery, live sites, other people's systems, code fixes or performance benchmarking."
 ---
 
-# Break-it 0.4.0
+# Break-it 0.4.1
 
 Find holes in the owner's own project before release. Only the independent reviewer
 (scanner) uses this skill. It reports evidence in plain words; it never fixes code.
@@ -53,6 +53,7 @@ the app's working folder separately. Do not install tools or dependencies.
    skips and other incomplete coverage. Check history through C02's direct
    `git log` → `mask` pipe; never display or save raw history or secret-bearing
    source lines. Missing git or a copy without `.git` is a skipped C02 with a reason.
+   Read every masked “Check by eye” list too; settings-like inner keys can still hold real secrets.
    Inspect the copy's startup code and configuration through secret-safe views.
    Use isolated local test data and disposable users A, B, and a normal user. Disable every
    external integration through existing local test settings. Do not use production

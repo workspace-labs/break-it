@@ -326,3 +326,81 @@ README counts were calculated from the nine `### Round` build/review headings:
 agent-level example and pending merge review do not add independent reviews.
 Version remains **0.4.0**. This merge is local only: no push, tag, release or
 installation change. Claude re-reviews before the owner decides whether to push.
+
+## 0.4.1 — nested secrets under credential names (2026-11-10)
+
+Builder verification by Codex; **delivered for Claude's independent review**.
+Baseline: clean `main` at `e78d4fabcd0ec35d391599beb9a2f6366a95ee09`, version
+0.4.0. The original 244 tests passed on Node 20.20.2 before production edits,
+using `/Users/mohammadaljaziri/.nvm/versions/node/v20.20.2/bin/node --test`.
+The runner had discovered the original suite before the new test file was written.
+An earlier sandboxed `npm test` had 213 passes and 31 localhost `listen EPERM`
+failures; allowing the existing synthetic loopback fixtures resolved those failures.
+
+### Regression evidence and final runs
+
+- Old implementation: the initial 20 nested-parent tests had 2 passes and 18
+  expected failures; the performance file had 16 passes and 2 new expected
+  failures. Further tests/variants cover quoted assignment text and keys,
+  metadata/provider overlap, and scalar fallback beyond depth 64 and within
+  prose or after malformed line breaks. Each discovered failure was reproduced
+  before its correction. One interim quote-boundary implementation failed the
+  existing malformed escaped-key timeout; bounded scalar fallback corrected it.
+- Final suite: **244 → 270 tests** (24 new parent tests, 2 new timing tests).
+  `node --test`, invoked with each installed runtime's absolute path, passed
+  **270/270, 0 failures, 0 cancelled, 0 skipped** on Node **18.20.8**, **20.20.2**
+  and **22.23.1**. Environment: macOS / Darwin arm64. Runs used synthetic local
+  data and loopback servers; no dependency installation or external target.
+- New one-MiB timing cases, measured once per final suite with `performance.now()`
+  around `findSecrets` in an isolated child (each limit: **2,000 ms**):
+  Node 18: **49.72 ms** for 2,000 sibling parents, **48.54 ms** for depth 64;
+  Node 20: **64.18 ms**, **54.79 ms**; Node 22: **61.31 ms**, **57.41 ms**.
+- Existing `leak-nested.test.mjs` deep named object/array prefix test remained
+  green. Its combined subtest duration was **622.77 ms / 1,157.95 ms / 677.51 ms**
+  on Node 18 / 20 / 22; its individual matching assertions retain their 2 s limit.
+- Builder-only probe on Node 20.20.2: a minified **2,097,152-byte** input with
+  sibling sensitive parents produced **21,846** hits in **109.99 ms**; redaction
+  removed every complete planted value. Mismatched delimiters and a JSON-escaped
+  metadata key also passed bounded detection/redaction checks.
+
+### Output, preservation and limits
+
+The five previously missed shapes are found and masked; the two existing shapes
+remain single hits. Thirteen benign settings produce no confirmed hits. All 16
+metadata keys yield masked by-eye evidence when otherwise eligible. Tests cover
+one heading per file, correct CRLF line numbers, clean/only-review endings,
+provider overlap without downgrading confirmed evidence, history masking,
+report refusal of raw evidence, quoted braces/keys, empty-first object arrays,
+unclosed parents, depth 64 and scalar fallback deeper than 64, and a parent/value
+crossing the one-MiB boundary without duplicate or partial masks.
+
+`send.mjs`, `load.mjs`, `tests/walls.test.mjs`, every pre-existing test except the
+timing file, and the approved `docs/` files are byte-identical to the baseline.
+Walls tests passed unchanged. No new imports outside the standard library and no
+dependencies were added. No package lock exists.
+
+`node scripts/demo-shop.mjs` passed: round 1 **12 tried, 3 blocked, 9 findings**;
+round 2 **12 tried, 12 blocked, 0 findings**. Its output is byte-identical to
+`examples/shop-app-report.md` (SHA-256
+`a80b855f2c73f52e1ab8503c688035c37d022492fd143e5a00f59a9b43277aee`).
+The existing report banner still says 0.4.0: the brief requires preserving
+messages/report format beyond the by-eye lines, so the interim banner change was
+reverted and its existing test retained. Package/README/SKILL/changelog identify 0.4.1.
+
+The static `audit-agent-skills` check of a disposable candidate folder named
+`break-it` found **0 structural errors, 4 review notices**: the unchanged hero
+image exceeds its one-MiB read limit, README mentions Claude Code, and this evidence
+section has a machine-specific runtime path and repeats that tool-name notice.
+The first audit, before this evidence section was appended, had only the first
+two notices. No installed skill was changed. The metadata list remains incomplete; a secret under `source`
+needs by-eye review. Inherited context is bounded to the available text/window
+and 64 levels; provider/scalar rules remain independent. Windows was not tested.
+
+Temporary logs: `/private/tmp/break-it-041-baseline-local.log`,
+`break-it-041-final-node18.log`, `break-it-041-final-node20.log`,
+`break-it-041-final-node22.log`, `break-it-041-red-parent.log`,
+`break-it-041-red-performance.log`, `break-it-041-extra-probes.log`,
+`break-it-041-demo.log`, and `break-it-041-skill-audit.json` (all under
+`/private/tmp`). Reproduce the durable tests with each runtime's `node --test`;
+run `node scripts/demo-shop.mjs` for the demo. Local commit only; no push, tag,
+release or installation. Next gate: Claude review, then the owner's decision.
