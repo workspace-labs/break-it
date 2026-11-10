@@ -16,7 +16,7 @@ const cases = [
   { name: 'Y4', text: `services:\n  api:\n    environment:\n      API_TOKENS:\n        primary: "${token}"`,
     hits: [[token, 5]], review: [] },
   { name: 'Y5', text: 'auth:\n  issuer: shop.example.com\n  callbackUrl: https://shop.example.com/cb',
-    hits: [], review: [['https://shop.example.com/cb', 3, 'callbackUrl']] },
+    hits: [], review: [['shop.example.com', 2, 'issuer'], ['https://shop.example.com/cb', 3, 'callbackUrl']] },
   { name: 'Y6', text: `token:\n  current: ${token}\nnext_section:\n  bucket: customer-uploads-eu`,
     hits: [[token, 2]], review: [] }
 ];
@@ -87,7 +87,7 @@ test('comments, blank lines and trailing comments preserve the block and exclude
 
 test('nested YAML keys decide the value classification at their own frame', () => {
   const text = `credentials:\n  value:\n    source: ${password}\n  metadata:\n    current: ${token}\n  source:\n    - aB3dE5fG7hJ9kL`;
-  exact(text, [[token, 5], ['aB3dE5fG7hJ9kL', 7]], [[password, 3, 'source']]);
+  exact(text, [[token, 5]], [[password, 3, 'source'], ['aB3dE5fG7hJ9kL', 7, 'source']]);
 });
 
 test('all existing nested filters apply to quoted and plain YAML values', () => {
@@ -97,7 +97,7 @@ test('all existing nested filters apply to quoted and plain YAML values', () => 
       quiet(`password:\n  value: ${value}\n  source: ${value}\n  - ${value}`);
     }
   }
-  quiet('password:\n  value: config.secret\n  env: process.env.DB_PASS\n  previous: os.environ["DB_PASS"]');
+  exact('password:\n  value: config.secret\n  env: process.env.DB_PASS\n  previous: os.environ["DB_PASS"]', [['config.secret', 2]]);
   exact('password:\n  value: 123456789', [['123456789', 2]]);
   assert.deepEqual(findSecrets('password:\n  value: 123456789', { minimumLength: 10 }), []);
   assert.deepEqual(findNestedReview('password:\n  source: 123456789', { minimumLength: 10 }), []);
@@ -193,4 +193,89 @@ test('flow comments stay quiet and following list-map entries keep their own key
 
 test('YAML doubled single quotes retain the complete value when masking', () => {
   exact("credentials:\n  value: 'firstpart99''secondpart99'", [["firstpart99''secondpart99", 2]]);
+});
+
+const fixRoundCases = [
+  { name: 'auth scopes inherit their non-value opening key',
+    text: 'auth:\n  scopes:\n    - read-user-profile\n', hits: [],
+    review: [['read-user-profile', 3, 'scopes']] },
+  { name: 'allowed origins inherit their non-value opening key',
+    text: 'auth:\n  allowedOrigins:\n    - https://shop.example.com\n    - https://admin.example.com\n', hits: [],
+    review: [['https://shop.example.com', 3, 'allowedOrigins'], ['https://admin.example.com', 4, 'allowedOrigins']] },
+  { name: 'Markdown front matter retains provider and scopes by-eye',
+    text: '---\ntitle: Login guide\nauth:\n  provider: github-oauth-app\n  scopes:\n    - read-user-profile\n---', hits: [],
+    review: [['github-oauth-app', 4, 'provider'], ['read-user-profile', 6, 'scopes']] },
+  { name: 'root token list remains confirmed', text: `token:\n  - ${token}`,
+    hits: [[token, 2]] },
+  { name: 'primary list remains confirmed', text: `secrets:\n  primary:\n    - ${token}`,
+    hits: [[token, 3]] },
+  { name: 'Compose API_TOKENS list remains confirmed',
+    text: 'services:\n  shop:\n    environment:\n      API_TOKENS:\n        - Tk9f8e7d6c5b4a3z',
+    hits: [['Tk9f8e7d6c5b4a3z', 5]] },
+  { name: 'sibling scopes and primary lists use separate frames',
+    text: `auth:\n  scopes:\n    - read-user-profile\n  primary:\n    - ${token}\n  allowedOrigins:\n    - https://shop.example.com`,
+    hits: [[token, 5]], review: [['read-user-profile', 3, 'scopes'], ['https://shop.example.com', 7, 'allowedOrigins']] },
+  { name: 'nearest key overrides an older value-like ancestor',
+    text: `credentials:\n  primary:\n    scopes:\n      - read-user-profile\n    secondary:\n      - ${token}`,
+    hits: [[token, 6]], review: [['read-user-profile', 4, 'scopes']] },
+  { name: 'list mapping entries keep their own key rule',
+    text: `auth:\n  scopes:\n    - current: ${token}\n  primary:\n    - label: ordinary-label-1234\n    - token: ${password}`,
+    hits: [[token, 3], [password, 6]], review: [['ordinary-label-1234', 5, 'label']] },
+  { name: 'letters-only block value is literal',
+    text: 'password:\n  value: CorrectHorseBatteryStaple', hits: [['CorrectHorseBatteryStaple', 2]] },
+  { name: 'dotted block value is literal',
+    text: 'token:\n  current: abc.def.ghijkl', hits: [['abc.def.ghijkl', 2]] },
+  { name: 'plain alphabetic list item is literal under its nearest key',
+    text: 'auth:\n  scopes:\n    - readprofile\n  primary:\n    - CorrectHorseBatteryStaple',
+    hits: [['CorrectHorseBatteryStaple', 5]], review: [['readprofile', 3, 'scopes']] },
+  { name: 'CRLF and tab lists keep keys across comments and dedents',
+    text: `auth:\r\n\tscopes:\r\n# comment\r\n\t\t- read-user-profile\r\n\tprimary:\r\n\t\t- ${token}\r\nnext:\r\n\t- outside-value-123`,
+    hits: [[token, 6]], review: [['read-user-profile', 4, 'scopes']] }
+];
+
+for (const fixture of fixRoundCases) {
+  test(`fix round 1: ${fixture.name}`, () => exact(fixture.text, fixture.hits, fixture.review));
+}
+
+test('fix round 1: auth lists and front matter are by-eye through real scan', async t => {
+  const fixtures = fixRoundCases.slice(0, 3);
+  const names = ['scopes.yaml', 'origins.yaml', 'guide.md'];
+  const output = await scan(t, Object.fromEntries(fixtures.map((fixture, index) => [names[index], fixture.text])));
+  assert.ok(!output.split('\n').some(line => /^(?:scopes\.yaml|origins\.yaml|guide\.md):\d/.test(line)),
+    'zero confirmed file rows');
+  for (const fixture of fixtures) {
+    for (const [value, line, key] of fixture.review) {
+      assert.ok(output.includes(`  line ${line}  auth.${key} = ${maskValue(value)}`));
+      assert.ok(!output.includes(value), 'complete by-eye value is hidden');
+    }
+  }
+});
+
+test('fix round 1: YAML block placeholders remain quiet in leaves and lists', () => {
+  for (const value of ['${BACKUP_TOKEN}', '{{ vault_api_key }}', '<your-password>', 'changeme', 'example',
+    'null', 'true', 'false', 'undefined', 'NULL', 'TRUE', 'FALSE', 'your-password-here', 'xxxxxxxxxxxx',
+    'process.env.DB_PASS', 'os.environ["DB_PASS"]']) {
+    for (const scalar of [value, `"${value.replaceAll('"', '\\"')}"`, `'${value}'`]) {
+      quiet(`password:\n  value: ${scalar}\n  primary:\n    - ${scalar}\n  scopes:\n    - ${scalar}`);
+    }
+  }
+});
+
+test('fix round 1: env, single-line YAML and unquoted brace or JS values keep reference skips', () => {
+  for (const value of ['CorrectHorseBatteryStaple', 'abc.def.ghijkl']) {
+    for (const text of [`PASSWORD=${value}`, `password: ${value}`, `const password = ${value};`,
+      `{"password":{"value":${value}}}`, `token: [${value}]`, `token:\n  current: [${value}]`]) quiet(text);
+    exact(`{"password":{"value":"${value}"}}`, [[value, 1]]);
+  }
+});
+
+test('fix round 1: brace scopes retain by-eye classification', () => {
+  exact('{"auth":{"scopes":["read-user-profile"]}}', [], [['read-user-profile', 1, 'scopes']]);
+});
+
+test('fix round 1: Python, Ruby and GitHub Actions guards stay quiet', () => {
+  for (const text of ['def login(token):\n    validated_user = check(token)',
+    'if password:\n    validated_user = check(password)',
+    'def secret\n  puts fetch_secret\nend',
+    'secrets:\n  TOKEN: ${{ secrets.API_TOKEN }}\n  primary:\n    - ${{ secrets.BACKUP_TOKEN }}']) quiet(text);
 });

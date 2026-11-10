@@ -227,7 +227,7 @@ function yamlFlow(text, line, rootIndent) {
 // Flow spans are handed to the existing walk; only their scalar fallback may
 // run later. All other owned lines are skipped by the generic field matcher.
 function yamlValues(text, root, parent, minimumLength, hits, review, quotedSpans) {
-  const frames = [root.indent];
+  const frames = [{ indent: root.indent, key: root.key }];
   const flows = [];
   let cursor = root.end;
   let ignoredIndent = root.empty ? null : root.indent;
@@ -246,9 +246,9 @@ function yamlValues(text, root, parent, minimumLength, hits, review, quotedSpans
     cappedSpan = null;
     if (line.invalid) break;
     owned = true;
-    while (frames.length > 1 && line.indent <= frames.at(-1)) frames.pop();
+    while (frames.length > 1 && line.indent <= frames.at(-1).indent) frames.pop();
     if (line.empty) {
-      if (frames.length < 64) frames.push(line.indent);
+      if (frames.length < 64) frames.push({ indent: line.indent, key: line.key ?? frames.at(-1).key });
       else {
         ignoredIndent = line.indent;
         cappedSpan = { start: cursor, end: line.end };
@@ -295,10 +295,12 @@ function yamlValues(text, root, parent, minimumLength, hits, review, quotedSpans
       }
       value = line.raw.slice(1, end);
     }
-    if (!/\s/.test(value) && !placeholder(value, quoted) && Array.from(value).length >= minimumLength) {
+    // Plain YAML block scalars are literal text, not code references.
+    if (!/\s/.test(value) && !placeholder(value, true) && Array.from(value).length >= minimumLength) {
       const item = { pattern: `generic nested ${parent}`, value, index: line.valueStart + Number(quoted) };
-      if (line.key === null || valueKeys.has(line.key.toLowerCase()) || sensitiveName(line.key)) hits.push(item);
-      else review.push({ ...item, parent, key: line.key });
+      const key = line.key ?? frames.at(-1).key;
+      if (key === null || valueKeys.has(key.toLowerCase()) || sensitiveName(key)) hits.push(item);
+      else review.push({ ...item, parent, key });
     }
     cursor = line.end;
   }

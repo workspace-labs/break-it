@@ -8,6 +8,10 @@
   mappings and bare list items, with the existing length, whitespace,
   placeholder/reference and confirmed/by-eye rules. Values keep their own lines;
   dedented siblings stay outside the credential block.
+- Fix round 1: make bare YAML list items inherit their nearest opening key,
+  keeping ordinary auth scopes and origins by-eye. Treat plain text inside a
+  YAML block as literal so letters-only and dotted credentials are found;
+  preserve placeholders and reference skips outside those block scalars.
 - Bound YAML inspection to one forward pass per block and at most 64 levels.
   Reject code-shaped lines, ignore comments, and trim trailing plain-value
   comments. Reuse the existing walk for inline flow objects and lists.

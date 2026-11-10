@@ -160,7 +160,7 @@ or `[`), or with `${`, `{{` or `<`, are ignored as reads/templates. Values exact
 ignores apply to quoted and unquoted values. Trailing commas/semicolons are
 removed only to classify these references, not from a reported value.
 
-For unquoted values only, a bare identifier made entirely of letters, with no
+For unquoted values outside indented YAML blocks, a bare identifier made entirely of letters, with no
 digits or punctuation, is a reference, as in `token = getToken`. Plain dotted
 references such as `config.secret`, `settings.db.password`, `this.token` and
 `env.API_KEY` are also ignored. A dotted reference has at least two nonempty
@@ -186,12 +186,25 @@ The first nonblank, noncomment line at the same or lesser indentation ends it;
 comments and blank lines do not end a block. A sibling such as `host` after a
 `credentials` block therefore does not inherit sensitivity.
 
-Inside the block, `key: value` uses the nearest key's classification from the
+Inside the block, `key: value` uses its own key's classification from the
 four filters above. A deeper `key:` opens another frame, so a `current` leaf is
-confirmed while a `pass` leaf is by-eye. Bare `- item` elements are confirmed
-when otherwise eligible. Values may be plain or single/double quoted. Plain
+confirmed while a `pass` leaf is by-eye. Bare `- item` elements inherit the
+nearest opening key: value-like or sensitive keys confirm eligible values;
+other keys put them by-eye. A list directly under the sensitive root is still
+confirmed. Thus `auth` → `scopes` → `- read-user-profile` is by-eye, while
+`secrets` → `primary` → `- …` is confirmed. A `- key: value` entry uses its own
+key, regardless of the enclosing list's key.
+
+Values may be plain or single/double quoted. Plain
 values lose a trailing whitespace-prefixed `# comment`; quoted `#` characters
-remain part of the value. Existing placeholders and reads stay quiet. Inline
+remain part of the value. Plain YAML text inside an indented block is literal:
+letters-only and dotted values such as `CorrectHorseBatteryStaple` and
+`abc.def.ghijkl` do not get the code-reference skip. The length, whitespace,
+placeholder, environment-read and template filters still apply; `${…}`, `{{…}}`,
+`<…>`, `changeme`, `example`, `null`, `true` and `false` stay quiet.
+Known limit: `.env` assignments and single-line YAML scalars still skip
+letters-only and dotted unquoted values. Brace/list and JS handling also retain
+their existing reference skips. Inline
 flow values (`key: { … }` and `key: [ … ]`) use the existing brace/list walk,
 including the matching-close requirement for unquoted list elements. Each
 reported line is the value's own line, not its parent header.

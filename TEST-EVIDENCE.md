@@ -817,3 +817,81 @@ Temporary evidence: `/private/tmp/break-it-044-evidence/` contains
 `preservation.json`. Reproduce the suites with each runtime's `node --test`,
 the focused YAML suite with `node --test tests/leak-yaml-blocks.test.mjs`, and
 the example with `node scripts/demo-shop.mjs --write`.
+
+### 0.4.4 fix round 1 — nearest YAML list keys and literal plain text (2026-11-10)
+
+Builder: Codex. Reviewer: Claude. F1 and F2 are corrected and delivered for
+independent re-review; Claude's decision is pending. Started on clean `main` at
+`20d7ba93b5faaacb1946bcaa7a5adb5bbfd5f0d0`. Version remains **0.4.4**.
+Before edits, Node **22.23.1** passed the **468/468** baseline with synthetic
+localhost listening permitted. The initial sandbox run found all 468 tests but
+reported 437 pass / 31 fail because localhost listeners returned `listen EPERM`.
+No assertions were weakened or skipped to accommodate that restriction.
+
+Each YAML indentation frame now retains its opening key. A bare list element
+inherits the nearest frame key; list mapping entries retain their own key.
+Ordinary `scopes` and `allowedOrigins` lists become masked by-eye, including
+Markdown front matter through real `scan`. Root, `primary`, Compose
+`API_TOKENS` and Y3 lists remain confirmed. Only plain values inside the YAML
+block reader switch to literal-text placeholder filtering, so letters-only and
+dotted strings count. Placeholder/template/environment-read skips remain.
+The preceding 0.4.4 section describes the original delivery: this subsection
+supersedes its bare-list and dotted-value classification statements.
+
+RED, before the scanner edit: **41 YAML tests, 27 passed / 14 failed**.
+After F1 alone: **35 passed / 6 failed**, with only F2 expectations still failing.
+After F2: **41/41 passed**. The file adds **18 regression tests**; three existing
+expectations change intentionally:
+
+- Y5 now includes `issuer: shop.example.com` by-eye, because plain block text is
+  literal. Its shared scan assertion also checks this extra by-eye item.
+- The nested-frame test moves the list beneath `source:` from confirmed to
+  by-eye under the nearest key.
+- The filter test confirms `value: config.secret` inside a block, while keeping
+  its environment reads quiet.
+
+All final full suites used the installed runtime's absolute path with `--test`:
+
+- Node **18.20.8**: **468 → 486**, **486/486 passed**, zero failures/skips/cancellations; **40.207 s**.
+- Node **20.20.2**: **468 → 486**, **486/486 passed**, zero failures/skips/cancellations; **40.186 s**.
+- Node **22.23.1**: **468 → 486**, **486/486 passed**, zero failures/skips/cancellations; **40.356 s**.
+
+The recorded starting baseline was Node 22; the 468 → 486 counts on Node 18/20
+compare the starting suite size with their verified final runs. Node 20 and 22
+partly overlapped. All existing timing fixtures and limits are unchanged and
+green. The one-MiB YAML sibling/depth diagnostics were **103.45 / 11.09 ms** on
+Node 18, **89.95 / 7.61 ms** on Node 20, and **84.17 / 13.28 ms** on Node 22,
+each below the existing **2,000 ms** limit with the required hit count.
+
+`node scripts/demo-shop.mjs` passed **12 tried / 3 blocked / 9 got through**,
+then **12 / 12 / 0**. The example report was not rewritten. Retained tests cover
+the requested scopes/origins/front-matter cases, preserved confirmed lists,
+mixed sibling frames, own-key mapping entries, letters-only/dotted values,
+quiet placeholders, CRLF/tabs, Python/Ruby/Actions guards, and unchanged env,
+single-line YAML, brace/list and JS handling.
+
+Additional builder probes passed **48/48**: four sensitive roots, five nearest
+keys with quoted/plain alphabetic items, nested ancestor overrides, own-key
+mapping overrides, empty list mapping frames, root-list restoration, whitespace
+filtering, full redaction and repeated masking. A read-only helper's **15/15**
+additional probes passed, including deep dedents and the 64-frame boundary.
+These are builder checks, not Claude's independent re-review.
+
+Preservation checks compare all **67 tracked files outside the five authorized
+files** byte for byte with `20d7ba9`. Every production byte outside
+`yamlValues()` is unchanged, including `placeholder()`, `sensitiveName()`,
+`valueKeys`, the brace/list walk, YAML guard, flow handoff and scalar fallback.
+No network/load/copy/seal code, walls test, timing test, dependency, approved
+workflow document, package version or installed skill copy changed.
+
+Evidence and pre-edit backups are in
+`/private/tmp/break-it-044-fix1-20261110-evidence/`: `baseline-20d7ba9.tar`,
+`pre-edit/`, `plan.md`, `baseline-node22.log`, `baseline-sandbox-denied.log`,
+`yaml-red.log`, `yaml-f1.log`, `yaml-green.log`, `final-node18.log`,
+`final-node20.log`, `final-node22.log`, `demo.log`, `break-tries.mjs`,
+`break-tries.json`, `preservation.json`, and baseline/final static audit JSON.
+The audits retain the same four pre-existing review notices with zero structural
+errors or new findings. No push, tag, release, installation or dependency change.
+The existing heuristic, whitespace, block-scalar, indentation, depth and scan
+window limits remain; Windows was not tested. Single-line YAML and `.env`
+letters-only/dotted reference skips remain a documented known limit.
