@@ -4,6 +4,7 @@
 
 - [Pattern list](#pattern-list)
 - [Generic assignment rule](#generic-assignment-rule)
+- [Indented YAML blocks](#indented-yaml-blocks)
 - [Output and limits](#output-and-limits)
 
 `scan`, `mask`, and the report guard share a small built-in list. No lists are
@@ -36,7 +37,8 @@ run only on the owner's throwaway copy or on text piped from that copy.
   9 characters. Output names the full field in lowercase, such as
   `generic db_password` or `generic apikey`.
 - **generic nested `<parent>`:** a value inside an object or list assigned to a
-  sensitive parent, such as `password={value:"…"}` or `secrets:["…"]`.
+  sensitive parent, such as `password={value:"…"}`, `secrets:["…"]`, or an
+  indented YAML block.
   The parent name is lowercased; the nested-value filters below apply.
 
 Word boundaries delimit provider shapes. When matches
@@ -173,6 +175,42 @@ also ignored, as in `password = getPassword()`. Quoted alphabetic strings, dotte
 strings and strings that look like function calls remain literal candidates,
 subject to the other ignores. The original placeholder rules above still apply. These choices keep
 code that reads a credential from being reported as a stored literal one.
+
+## Indented YAML blocks
+
+A sensitive mapping name followed by `:` and only spaces or a `# comment` on
+its line opens an indented block. Mapping names use the generic name syntax
+above; quoted keys and sequence entries are supported. Following lines belong
+to the block while their indentation is greater than the name's indentation.
+The first nonblank, noncomment line at the same or lesser indentation ends it;
+comments and blank lines do not end a block. A sibling such as `host` after a
+`credentials` block therefore does not inherit sensitivity.
+
+Inside the block, `key: value` uses the nearest key's classification from the
+four filters above. A deeper `key:` opens another frame, so a `current` leaf is
+confirmed while a `pass` leaf is by-eye. Bare `- item` elements are confirmed
+when otherwise eligible. Values may be plain or single/double quoted. Plain
+values lose a trailing whitespace-prefixed `# comment`; quoted `#` characters
+remain part of the value. Existing placeholders and reads stay quiet. Inline
+flow values (`key: { … }` and `key: [ … ]`) use the existing brace/list walk,
+including the matching-close requirement for unquoted list elements. Each
+reported line is the value's own line, not its parent header.
+
+This is a YAML-shaped heuristic, not a YAML parser. Only mapping entries,
+empty mapping headers and sequence items count. A line containing `=`, `(`,
+`;` or `{` before its first colon-space delimiter is code-shaped and ends the
+block; other non-YAML-shaped lines end it too. Ordinary Python blocks such as
+`if password:` followed by a function call do not become YAML credential blocks.
+Each block is walked once, recording its end so inner sensitive names do not
+restart it. Indentation frames are capped at 64 levels.
+
+Block scalars (`key: |` and `key: >`) are not judged line by line: their plain
+text is outside this generic detector's coverage. Independent provider patterns
+still detect a PEM private-key header in one. Each tab counts as one indentation
+unit, consistently with one space; mixed tabs/spaces may end a block early.
+The existing 1 MiB window and 4 KiB overlap limits also apply: indentation
+context is not carried beyond retained overlap, so coverage across a window is
+bounded rather than a complete YAML parse.
 
 ## Output and limits
 

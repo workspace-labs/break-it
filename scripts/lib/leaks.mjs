@@ -154,6 +154,157 @@ function nestedValues(text, start, parent, minimumLength, hits, review, quotedSp
   return cursor;
 }
 
+// A small YAML shape reader, not a YAML parser. Offsets always refer to the
+// original text; tabs and spaces each count as one indentation unit.
+function yamlLine(text, start) {
+  const newline = text.indexOf('\n', start);
+  const end = newline < 0 ? text.length : newline + 1;
+  const line = text.slice(start, newline < 0 ? end : newline).replace(/\r$/, '');
+  const indent = /^[ \t]*/.exec(line)[0].length;
+  let body = line.slice(indent);
+  if (!body || body.startsWith('#')) return { end, indent, blank: true };
+  let offset = start + indent;
+  const list = /^-[ \t]+/.exec(body);
+  if (list) { body = body.slice(list[0].length); offset += list[0].length; }
+  const mapping = /^(?:(["'])([A-Za-z_$][\w$.-]{0,127})\1|([A-Za-z_$][\w$.-]{0,127}))[ \t]*:(?=[ \t]|$)[ \t]*/.exec(body);
+  if (!mapping && !list) return { end, indent, invalid: true };
+  if (!mapping && !/^["'\[{]/.test(body) && /[=(;{]/.test(body.split(/:[ \t]/, 1)[0])) {
+    return { end, indent, invalid: true };
+  }
+  const key = mapping ? mapping[2] ?? mapping[3] : null;
+  const keyIndex = mapping ? offset + Number(Boolean(mapping[1])) : -1;
+  const valueStart = offset + (mapping?.[0].length ?? 0);
+  const raw = text.slice(valueStart, start + line.length).trimEnd();
+  const empty = !raw || raw.startsWith('#');
+  return { end, indent, key, keyIndex, valueStart, raw, empty };
+}
+
+// Find a flow's envelope without crossing a YAML sibling. Replace comments
+// with spaces only in the walk's input, retaining original evidence offsets.
+function yamlFlow(text, line, rootIndent) {
+  let cursor = line.valueStart;
+  let segment = cursor;
+  let rangeStart = cursor;
+  let depth = 0;
+  let quote = null;
+  let closed = false;
+  const parts = [], ranges = [];
+  while (cursor < text.length) {
+    if (cursor > line.valueStart && text[cursor - 1] === '\n') {
+      const next = yamlLine(text, cursor);
+      if (!next.blank && (next.indent <= rootIndent ||
+          next.indent <= line.indent && !/^[ \t]*[}\]]/.test(text.slice(cursor, next.end)))) break;
+    }
+    const char = text[cursor];
+    if (quote) {
+      if (char === '\r' || char === '\n') quote = null;
+      else if (char === '\\') { cursor += Math.min(2, text.length - cursor); continue; }
+      else if (char === quote) quote = null;
+    } else if (char === '"' || char === "'" || char === '`') quote = char;
+    else if (char === '#' && /\s/.test(text[cursor - 1] || '')) {
+      const newline = text.indexOf('\n', cursor);
+      const end = newline < 0 ? text.length : newline;
+      parts.push(text.slice(segment, cursor), ' '.repeat(end - cursor));
+      ranges.push({ start: rangeStart, end: cursor });
+      rangeStart = end;
+      segment = end;
+      cursor = end;
+      continue;
+    } else if (char === '{' || char === '[') depth++;
+    else if (char === '}' || char === ']') {
+      depth--;
+      if (!depth) { cursor++; closed = true; break; }
+    }
+    cursor++;
+  }
+  parts.push(text.slice(segment, cursor));
+  ranges.push({ start: rangeStart, end: cursor });
+  const newline = closed ? text.indexOf('\n', cursor) : -1;
+  return { input: parts.join(''), ranges, next: closed ? (newline < 0 ? text.length : newline + 1) : cursor };
+}
+
+// One forward pass owns an indented block, including ignored scalar bodies.
+// Flow spans are handed to the existing walk; only their scalar fallback may
+// run later. All other owned lines are skipped by the generic field matcher.
+function yamlValues(text, root, parent, minimumLength, hits, review, quotedSpans) {
+  const frames = [root.indent];
+  const flows = [];
+  let cursor = root.end;
+  let ignoredIndent = root.empty ? null : root.indent;
+  let cappedSpan = null;
+  let owned = !root.empty;
+  while (cursor < text.length) {
+    const line = yamlLine(text, cursor);
+    if (line.blank) { cursor = line.end; continue; }
+    if (line.indent <= root.indent) break;
+    if (ignoredIndent !== null && line.indent > ignoredIndent) {
+      if (cappedSpan) cappedSpan.end = line.end;
+      cursor = line.end;
+      continue;
+    }
+    ignoredIndent = null;
+    cappedSpan = null;
+    if (line.invalid) break;
+    owned = true;
+    while (frames.length > 1 && line.indent <= frames.at(-1)) frames.pop();
+    if (line.empty) {
+      if (frames.length < 64) frames.push(line.indent);
+      else {
+        ignoredIndent = line.indent;
+        cappedSpan = { start: cursor, end: line.end };
+        flows.push(cappedSpan);
+      }
+      cursor = line.end;
+      continue;
+    }
+    const plain = line.raw.replace(/[ \t]+#.*$/, '').trimEnd();
+    if (/^[|>](?:[1-9][+-]?|[+-][1-9]?)?$/.test(plain)) {
+      ignoredIndent = line.indent;
+      cursor = line.end;
+      continue;
+    }
+    if (line.raw[0] === '{' || line.raw[0] === '[') {
+      const flow = yamlFlow(text, line, root.indent);
+      // A virtual object frame gives flow arrays their YAML field's key rule,
+      // exactly as an array nested under that field in a brace object.
+      const prefix = line.key === null ? '' : `{${JSON.stringify(line.key)}:`;
+      const input = prefix + flow.input;
+      const innerHits = [], innerReview = [], spans = [];
+      nestedValues(input, 0, parent, minimumLength, innerHits, innerReview, spans);
+      const delta = line.valueStart - prefix.length;
+      for (const [source, target] of [[innerHits, hits], [innerReview, review]]) {
+        for (const hit of source) target.push({ ...hit, index: hit.index + delta });
+      }
+      for (const span of spans) if (span.start >= prefix.length) {
+        quotedSpans.push({ ...span, start: span.start + delta, end: span.end + delta });
+      }
+      for (const range of flow.ranges) flows.push(range);
+      cursor = flow.next;
+      continue;
+    }
+    const quoted = line.raw[0] === '"' || line.raw[0] === "'";
+    let value = plain;
+    if (quoted) {
+      let end = 1;
+      while (end < line.raw.length) {
+        if (line.raw[end] === line.raw[0]) {
+          if (line.raw[0] === "'" && line.raw[end + 1] === "'") { end += 2; continue; }
+          break;
+        }
+        end += line.raw[0] === '"' && line.raw[end] === '\\' && end + 1 < line.raw.length ? 2 : 1;
+      }
+      value = line.raw.slice(1, end);
+    }
+    if (!/\s/.test(value) && !placeholder(value, quoted) && Array.from(value).length >= minimumLength) {
+      const item = { pattern: `generic nested ${parent}`, value, index: line.valueStart + Number(quoted) };
+      if (line.key === null || valueKeys.has(line.key.toLowerCase()) || sensitiveName(line.key)) hits.push(item);
+      else review.push({ ...item, parent, key: line.key });
+    }
+    cursor = line.end;
+  }
+  return { end: cursor, flows, owned };
+}
+
 function genericSecrets(text, minimumLength) {
   const hits = [];
   const review = [];
@@ -165,8 +316,13 @@ function genericSecrets(text, minimumLength) {
   const maskedValue = /(?:.{3}….{4}|••••) \(\d+ chars\)/y;
   let unquotedEnd = 0;
   let containerEnd = 0;
+  let yamlEnd = 0;
+  let yamlFlows = [];
+  let flowIndex = 0;
   let field;
   while ((field = fields.exec(text))) {
+    while (flowIndex < yamlFlows.length && yamlFlows[flowIndex].end <= field.index) flowIndex++;
+    if (field.index < yamlEnd && !(flowIndex < yamlFlows.length && field.index >= yamlFlows[flowIndex].start)) continue;
     let fieldLimit = text.length;
     let inQuotedValue = false;
     while (quoteIndex < quotedSpans.length && quotedSpans[quoteIndex].end <= field.index) quoteIndex++;
@@ -184,6 +340,25 @@ function genericSecrets(text, minimumLength) {
       }
     }
     if (!sensitiveName(field[1])) continue;
+    // Only a whole mapping line may open YAML inheritance. Code prefixes such
+    // as `if password:` and `def check(token):` fail this anchored shape guard.
+    if (!inQuotedValue && field.index >= containerEnd && /:/.test(field[0]) &&
+        (/[\r\n]/.test(field[2]) || text[field.index + field[0].length] === '#' ||
+         /[|>]/.test(text[field.index + field[0].length] || '\0'))) {
+      const lineStart = text.lastIndexOf('\n', field.index - 1) + 1;
+      const root = yamlLine(text, lineStart);
+      const plain = root.raw?.replace(/[ \t]+#.*$/, '').trimEnd();
+      if (root.keyIndex === field.index && (root.empty || /^[|>](?:[1-9][+-]?|[+-][1-9]?)?$/.test(plain))) {
+        const block = yamlValues(text, root, field[1].toLowerCase(), minimumLength, hits, review, quotedSpans);
+        if (block.owned) {
+          yamlEnd = block.end;
+          yamlFlows = block.flows;
+          flowIndex = 0;
+          containerEnd = Math.max(containerEnd, yamlEnd);
+          continue;
+        }
+      }
+    }
     const start = field.index + field[0].length;
     if (start >= fieldLimit) continue;
     const fieldText = fieldLimit < text.length ? text.slice(0, fieldLimit) : text;

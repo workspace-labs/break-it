@@ -710,3 +710,110 @@ demo, break-tries, helper checks, preservation hashes and baseline/final audits.
 One additional local commit only; no push, tag, release, dependency or installation.
 Existing tokenizer, quoted-value, frame-cap and scan-window limits still apply;
 Windows was not tested.
+
+## 0.4.4 — indented YAML credential blocks (2026-11-10)
+
+Builder verification for the owner's YAML repair brief, starting on clean `main`
+at `df6be62299276a4da6c5c3285dd7e175c1996bf9` (0.4.3). One local commit is
+requested; no push, tag, release, installation or dependency change.
+
+### Before and after
+
+The shared generic detector skipped newline-only sensitive assignments before
+considering indentation. Y1–Y6 now use a bounded YAML-shaped block walk: scalar
+mapping leaves use their nearest key; bare list elements are confirmed when
+eligible. Non-value-like leaves remain masked by-eye. Dedents and code-shaped
+lines stop inheritance, comments and blank lines do not, and trailing plain
+comments are excluded from evidence. Each hit points at its own value's line.
+
+The existing `placeholder`, `sensitiveName`, `valueKeys` and `nestedValues` rules
+are unchanged. In particular, Y5's plain `shop.example.com` stays quiet as an
+unquoted dotted reference; `callbackUrl` goes by-eye, with zero confirmed hits.
+Inline flows retain their YAML field's key through a virtual object frame;
+a bounded envelope stops at the real flow close or a YAML sibling. Comments
+inside that envelope become spaces for the existing walk, preserving offsets.
+The outer block records consumed spans and permits only flow/depth-cap scalar
+fallback, without rewalking nested sensitive headers.
+
+### Tests and results
+
+All runs below used the installed runtimes sequentially, with `node --test`.
+The synthetic localhost tests need loopback listening permitted. The first
+sandboxed baseline reported 412 pass / 31 fail, all failures caused by
+`listen EPERM`; the authorized rerun passed. No test was disabled or relaxed.
+
+- Node **18.20.8**: baseline **443/443**, final **468/468**, 0 failures/skips.
+- Node **20.20.2**: baseline **443/443**, final **468/468**, 0 failures/skips.
+- Node **22.23.1**: baseline **443/443**, final **468/468**, 0 failures/skips.
+
+Node 22's baseline ran in the original checkout before source changes. Node
+18/20 baselines ran from an archive of exact `df6be62` in the evidence directory.
+The final suites ran against this checkout. The final count adds 23 tests in
+`tests/leak-yaml-blocks.test.mjs` and two timing cases in
+`tests/leak-performance.test.mjs`.
+
+The initial YAML RED run was 2 pass / 15 fail before implementation. All 23
+final YAML tests were also run against the archived baseline (see
+`final-yaml-on-baseline-red.log`). During implementation, edge tests caught
+quoted-scalar fallback, flow key classification, unclosed-flow boundaries,
+depth-cap scalar fallback, comment overrun and doubled-single-quote truncation.
+These now have retained tests. The first full Node 22 run caught an existing
+multiline-list regression (461/462); its unchanged test passes in the final run.
+
+Only one existing expectation changed: `tests/report.test.mjs` now expects the
+0.4.4 banner. The performance file adds fixtures, compact output for those
+fixtures, and two assertions/tests without changing existing cases. Every
+other pre-existing test file is byte-identical to the baseline.
+
+### Timing
+
+Each new input is exactly 1 MiB; each test requires under **2,000 ms** with the
+correct hit count. Times are one measured matching run per final suite:
+
+- Node 18: **102.74 ms** for 20,000 sibling sensitive blocks; **12.26 ms** for
+  one sensitive block nested 64 levels.
+- Node 20: **81.54 ms** siblings; **10.26 ms** depth 64.
+- Node 22: **87.02 ms** siblings; **10.58 ms** depth 64.
+
+All existing matching timing tests also passed their original limits, including
+unclosed-list prose and regex stress; the separate full-file scan kept its
+original ten-second bound.
+
+### Demo, break-tries and preservation
+
+`node scripts/demo-shop.mjs --write` passed: **12 tried / 3 blocked / 9 got
+through**, then **12 / 12 / 0**. The generated report differs only in its banner.
+
+Retained YAML tests cover Y1–Y6 through the real scan, complete masking and value
+line numbers, Docker Compose, Kubernetes, Rails exactly once, dedents, comments,
+placeholders/env reads, Python/code-shaped lines, CRLF/tabs, block scalars/PEM,
+1 MiB overlap, nearest keys, flow comments and limits. Builder-only probes add
+GitHub Actions, Ansible, Markdown front matter, internal flow comments, repeat
+redaction and **300 generated nested mappings** with comments/dedents. All pass;
+probe artifacts store only masked candidates. An initial probe line expectation
+was corrected from 6 to 5 after counting the synthetic fixture's actual lines.
+
+Byte comparisons against `df6be62` verify the unchanged original docs, network,
+load, copy, seal, scan-window code and walls test. The brace/list walk,
+placeholder function and sensitive-name/plural rule are unchanged. Static skill
+metadata/resource audits found the same four pre-existing review warnings in
+baseline and candidate: oversized hero image skipped, two Claude Code mentions,
+and a personal path in historical evidence. No hard structural failure or new
+warning was found. The skill description is unchanged; no installed copy changed.
+
+### Limits and evidence
+
+This remains a heuristic, not a YAML parser. Block scalar bodies are ignored by
+the generic block walk; provider patterns still detect PEM keys. Tabs count as
+one unit, mixed indentation can end a block early, depth stays capped at 64,
+and context beyond the retained 4 KiB scan overlap is not carried to the next
+1 MiB window. Independent Claude review and fresh-clone verification remain
+pending; these results are builder verification.
+
+Temporary evidence: `/private/tmp/break-it-044-evidence/` contains
+`baseline-node18.log`, `baseline-node20.log`, `baseline-node22.log`,
+`final-node18.log`, `final-node20.log`, `final-node22.log`, RED/focused logs,
+`demo-shop.log`, `break-tries.mjs`, `break-tries.json`, skill audit JSON and
+`preservation.json`. Reproduce the suites with each runtime's `node --test`,
+the focused YAML suite with `node --test tests/leak-yaml-blocks.test.mjs`, and
+the example with `node scripts/demo-shop.mjs --write`.

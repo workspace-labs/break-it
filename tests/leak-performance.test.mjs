@@ -27,6 +27,8 @@ function timedFind(mode, timeout = 3500) {
       : mode === 'unclosed-prose' ? unclosedProse
       : mode === 'minified-lists' ? listRecord.repeat(Math.floor(size / listRecord.length)).padEnd(size, ' ')
       : mode === 'unclosed-lists' ? (listPrefix + deepRecord.repeat(Math.floor((size - listPrefix.length) / deepRecord.length))).padEnd(size, ' ')
+      : mode === 'yaml-siblings' ? Array.from({ length: 20000 }, (_, i) => 'password:\\n  value: yaml-SYNTHETIC-' + i.toString().padStart(5, '0') + '-012345\\n').join('').padEnd(size, ' ')
+      : mode === 'yaml-deep' ? ('password:\\n' + Array.from({ length: 63 }, (_, i) => ' '.repeat(i + 1) + 'password:\\n').join('') + ' '.repeat(64) + 'value: ${value}\\n' + ' '.repeat(64) + '#').padEnd(size, 'x')
       : mode === 'sibling-parents' ? Array.from({ length: 2000 }, (_, i) => 'password={child:{value:"sibling-SYNTHETIC-' + i.toString().padStart(4, '0') + '-0123456789",note:"' + 'ordinary words '.repeat(29) + '"}}').join('\\n').padEnd(size, ' ').slice(0, size)
       : mode === 'deep-parent' ? 'password={' + 'child:{'.repeat(63) + 'value:"${value}",note:"' + ' '.repeat(size - ('password={' + 'child:{'.repeat(63) + 'value:"${value}",note:"' + '"' + '}'.repeat(64)).length) + '"' + '}'.repeat(64)
       : mode === 'dotted' ? 'a.b.c.d.'.repeat(Math.ceil(size / 8)).slice(0, size)
@@ -45,7 +47,8 @@ function timedFind(mode, timeout = 3500) {
     const start = performance.now();
     const hits = findSecrets(input);
     const elapsed = performance.now() - start;
-    if (mode === 'unclosed-prose') console.log(JSON.stringify({ elapsed, hitCount: hits.length, bytes: input.length }));
+    if (mode.startsWith('yaml-')) console.log(JSON.stringify({ elapsed, hitCount: hits.length, bytes: Buffer.byteLength(input) }));
+    else if (mode === 'unclosed-prose') console.log(JSON.stringify({ elapsed, hitCount: hits.length, bytes: input.length }));
     else console.log(JSON.stringify({ elapsed, hits: hits.map(hit => ({
       line: hit.line, index: hit.index, masked: maskValue(hit.value)
     })) }));
@@ -118,6 +121,20 @@ test('unclosed lists two MiB prose stays below two seconds with zero hits', t =>
   assert.ok(observed.elapsed < 2000, 'unclosed prose stays within the time budget');
   assert.equal(observed.hitCount, 0, 'an unclosed list never confirms ordinary prose');
 });
+
+
+for (const [mode, count] of [['yaml-siblings', 20000], ['yaml-deep', 1]]) {
+  test(`YAML blocks one MiB ${mode} stays below two seconds without rescanning`, t => {
+    const result = timedFind(mode, 3500);
+    assert.ok(!result.error, 'bounded YAML child finishes without hanging');
+    assert.equal(result.status, 0, 'YAML matching child exits successfully');
+    const observed = JSON.parse(result.stdout);
+    t.diagnostic(`${mode}: ${observed.elapsed.toFixed(2)} ms for one MiB`);
+    assert.equal(observed.bytes, 1024 * 1024, 'input is exactly one MiB');
+    assert.ok(observed.elapsed < 2000, 'each sensitive YAML block is walked at most once');
+    assert.equal(observed.hitCount, count, 'every inherited YAML value is found exactly once');
+  });
+}
 
 test('N1 valid JWT prefixes following hyphens retain their previous recognition', () => {
   const result = timedFind('jwt-prefix-hyphen');

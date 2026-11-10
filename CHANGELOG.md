@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.4] - 2026-11-10
+
+### Fixed
+
+- Read indentation-based YAML values under credential names, including nested
+  mappings and bare list items, with the existing length, whitespace,
+  placeholder/reference and confirmed/by-eye rules. Values keep their own lines;
+  dedented siblings stay outside the credential block.
+- Bound YAML inspection to one forward pass per block and at most 64 levels.
+  Reject code-shaped lines, ignore comments, and trim trailing plain-value
+  comments. Reuse the existing walk for inline flow objects and lists.
+- Document block-scalar, tab and scan-window coverage limits. Provider patterns
+  still find private-key headers inside block scalars.
+- Update versioned documentation, report banner and example for 0.4.4; add YAML
+  regression and performance coverage with evidence on Node 18, 20 and 22.
+
 ## [0.4.3] - 2026-11-10
 
 ### Fixed
