@@ -639,3 +639,74 @@ Evidence and pre-edit archive: `../break-it-043-20261110-codex-evidence/`.
 `final-results.json`, `preservation-check.json`, baseline/final skill audits,
 `baseline-29bc728.tar` and `pre-edit-backups/` contain the builder evidence.
 One local commit only; no push, tag, release or installation.
+
+
+### 0.4.3 fix round 1 — unquoted elements require a closed list (2026-11-10)
+
+Builder: Codex. Reviewer: Claude. F1 is **CORRECTED / DELIVERED FOR RE-REVIEW**;
+Claude's independent decision is pending. Started on clean `main` at
+`edc3a43379dcd25b144ec744ac936cdfb203c43b`. Version remains **0.4.3**.
+Before any edits, installed Node **22.23.1** passed the **421/421** baseline.
+The exact archived starting commit also passed **421/421** on Node **18.20.8**
+and **20.20.2** after working-tree edits began, with zero failures or skips.
+All full suites permitted only the existing synthetic-loopback tests.
+
+Root cause: the nested walk published unquoted words immediately, even if their
+array never closed. Each tracked array frame now holds its unquoted candidates,
+already classified as confirmed or by-eye, and publishes them only at its own
+matching `]`. End-of-text and mismatched closes discard still-held candidates;
+crossing the 64-frame cap invalidates still-open frames because delimiter types
+beyond the cap are not tracked. Already closed inner frames retain their values.
+Quoted-element code is byte-identical to the starting commit.
+
+Unquoted token spans also share only a small boolean closure state with their
+frame. Scalar fallback checks it so an embedded `password=...` cannot revive a
+dropped element. Closed-list fallback remains available. Pending candidates
+belong to their frame; neither state references nor span metadata retain pending
+arrays. There is no extra text pass or container rescan; `containerEnd` remains.
+
+RED before the scanner edit: **21 functional tests, 5 passed / 16 failed**;
+the new two-MiB timing fixture failed with **105,969 false hits in 168.68 ms**.
+GREEN: focused list/plural/nested/classification/timing run **215/215**.
+The new functional file adds **21 tests**, and performance adds **1**:
+
+- Node **18.20.8**: **421 → 443**, all 443 passed, zero failures/cancelled/skipped; 39.701 s. Two-MiB unclosed prose: **0 hits, 194.28 ms**; original list stress cases: **100.44 ms** minified and **118.59 ms** deep/unclosed.
+- Node **20.20.2**: **421 → 443**, all 443 passed, zero failures/cancelled/skipped; 39.201 s. Two-MiB unclosed prose: **0 hits, 198.11 ms**; original list stress cases: **75.02 ms** minified and **106.71 ms** deep/unclosed.
+- Node **22.23.1**: **421 → 443**, all 443 passed, zero failures/cancelled/skipped; 39.857 s. Two-MiB unclosed prose: **0 hits, 184.22 ms**; original list stress cases: **81.79 ms** minified and **97.62 ms** deep/unclosed.
+
+Every timing assertion retains its existing limit, including **2,000 ms** for the
+new two-MiB case. Existing functional tests are unchanged. The only pre-existing
+test file edited is `tests/leak-performance.test.mjs`: one new input mode and one
+new test; the new mode returns hit count rather than over 100,000 masks so RED can
+fail on its zero-hit assertion. All older output fields and assertions remain.
+
+The exact SETUP.md fixture now returns **No secrets found** via real `scan`, with
+zero confirmed and zero by-eye values from the library. Closed unquoted lists,
+closed inner/open outer lists and unclosed quoted values remain found. Unclosed
+and mismatched unquoted lists, by-eye candidates and assignment-like elements
+are dropped. Tests cover depth 64, overflow followed by later closes and an
+unclosed list crossing the one-MiB scan window.
+
+`node scripts/demo-shop.mjs --write` passed **12/3/9**, then **12/12/0**. Its report
+is byte-identical to the base. All approved docs, protected modules, wall/trap
+tests, 0.4.3 list tests, plural and confirm/by-eye rules remain byte-identical to
+`edc3a43`. Only the same 0.4.3 changelog entry is updated; package and banner remain
+unchanged. The reference now explains closed-list handling and OAuth scope-list
+false positives such as `allowedTokens: ["read:orders"]`.
+
+Additional builder break-tries: **20/20 passed**, including prose/markdown/regex
+stray brackets, nested closure/mismatch, inherited by-eye, cap invalidation and
+150,000 closed unquoted elements. A separate helper code check passed **66/66**
+focused tests and **15/15** additional probes, including 130,000 closed elements,
+closed-list comparisons against base and scalar-fallback controls. These are
+builder-side checks, not Claude's independent re-review.
+
+Static audit: **0 structural errors; the same 4 pre-existing review notices**
+with unchanged codes/locations/messages. Evidence:
+`../break-it-043-fix1-20261110-codex-evidence/` contains base archive and backups,
+`break-it-043-fix1-baseline-node{18,20,22}.log`, `unclosed-red` and `performance-red`
+logs under the same prefix, final full-suite logs for all three versions, focused,
+demo, break-tries, helper checks, preservation hashes and baseline/final audits.
+One additional local commit only; no push, tag, release, dependency or installation.
+Existing tokenizer, quoted-value, frame-cap and scan-window limits still apply;
+Windows was not tested.

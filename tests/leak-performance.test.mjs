@@ -21,7 +21,10 @@ function timedFind(mode, timeout = 3500) {
     const listRecord = '{"password":["a","b"],"label":"ordinary-setting"},';
     const listPrefix = '"password":['.repeat(64);
     const deepRecord = '"password":[null],';
+    const unclosedProse = mode === 'unclosed-prose' ? 'password=[\\n' +
+      Array.from({ length: 70000 }, (_, i) => 'item_' + i + '_value: some_long_value_' + i + '\\n').join('').slice(0, 2 * size) : '';
     const input = mode === 'base64' ? seed.repeat(Math.ceil(size / seed.length)).slice(0, size)
+      : mode === 'unclosed-prose' ? unclosedProse
       : mode === 'minified-lists' ? listRecord.repeat(Math.floor(size / listRecord.length)).padEnd(size, ' ')
       : mode === 'unclosed-lists' ? (listPrefix + deepRecord.repeat(Math.floor((size - listPrefix.length) / deepRecord.length))).padEnd(size, ' ')
       : mode === 'sibling-parents' ? Array.from({ length: 2000 }, (_, i) => 'password={child:{value:"sibling-SYNTHETIC-' + i.toString().padStart(4, '0') + '-0123456789",note:"' + 'ordinary words '.repeat(29) + '"}}').join('\\n').padEnd(size, ' ').slice(0, size)
@@ -42,7 +45,8 @@ function timedFind(mode, timeout = 3500) {
     const start = performance.now();
     const hits = findSecrets(input);
     const elapsed = performance.now() - start;
-    console.log(JSON.stringify({ elapsed, hits: hits.map(hit => ({
+    if (mode === 'unclosed-prose') console.log(JSON.stringify({ elapsed, hitCount: hits.length, bytes: input.length }));
+    else console.log(JSON.stringify({ elapsed, hits: hits.map(hit => ({
       line: hit.line, index: hit.index, masked: maskValue(hit.value)
     })) }));
   `;
@@ -103,6 +107,17 @@ for (const mode of ['minified-lists', 'unclosed-lists']) {
     assert.equal(observed.hits.length, 0, 'short elements and null do not become credential findings');
   });
 }
+
+test('unclosed lists two MiB prose stays below two seconds with zero hits', t => {
+  const result = timedFind('unclosed-prose', 3500);
+  assert.ok(!result.error, 'bounded prose child finishes without hanging');
+  assert.equal(result.status, 0, 'unclosed prose matching child exits successfully');
+  const observed = JSON.parse(result.stdout);
+  t.diagnostic(`unclosed-prose: ${observed.elapsed.toFixed(2)} ms for two MiB`);
+  assert.equal(observed.bytes, 2 * 1024 * 1024 + 'password=[\n'.length, 'two MiB prose follows the open list');
+  assert.ok(observed.elapsed < 2000, 'unclosed prose stays within the time budget');
+  assert.equal(observed.hitCount, 0, 'an unclosed list never confirms ordinary prose');
+});
 
 test('N1 valid JWT prefixes following hyphens retain their previous recognition', () => {
   const result = timedFind('jwt-prefix-hyphen');

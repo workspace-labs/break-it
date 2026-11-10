@@ -98,9 +98,12 @@ unquoted flow-style elements such as `password: [Hunter2Hunter2]`. Each eligible
 element is judged and masked on its own; empty lists and lists containing only
 short words are ignored. Unquoted elements use the unquoted placeholder/reference
 rules, so `[process.env.A]`, `[null]`, `[true]` and short numbers stay quiet.
+Unquoted list elements count only when their own list closes with a matching `]`;
+an unclosed, mismatched or depth-cap-invalidated frame drops its held elements.
+An inner list that closes normally keeps its elements even if an outer list stays open.
 The scan ends at the matching close brace or bracket; braces inside quoted
 strings do not count. If no matching close exists in the current text, it stops
-at text end and considers the values seen so far. It never invents a container
+at text end and retains eligible quoted values seen so far. It never invents a container
 span beyond that text or attributes later sibling fields to a closed parent.
 Quoted object keys may contain punctuation, Unicode or escaped delimiters; they
 are not limited to the generic credential-name length. Names and values after a
@@ -113,6 +116,7 @@ ordinary words in a bare `tokens: [...]` list are still reported. For example,
 `{"tokens":["understanding","the","world"]}` reports only `understanding` as a
 confirmed element. The short words, brackets and final `}` are not candidates.
 The name is not special-cased as safe text.
+OAuth scope lists under token-type names, such as `allowedTokens: ["read:orders"]`, can also be reported.
 
 Each inner string value, and each unquoted list element, is checked with the same
 length, whitespace and placeholder/reference rules, then classified by its inner key:

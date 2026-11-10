@@ -8,6 +8,10 @@
   through its matching closing bracket, including multi-line and unquoted lists.
   Empty and short-word lists no longer raise false alarms or swallow later fields;
   eligible elements are masked separately and following credentials keep their names.
+- Fix round 1: hold unquoted list candidates until their own matching `]`, dropping
+  unclosed, mismatched or depth-cap-invalidated frames so stray brackets in notes
+  cannot turn later prose into credentials. Keep quoted and completed inner-list
+  evidence; document OAuth scope-list false positives.
 - Keep the existing filters, confirmed/by-eye classification, plural names and
   bounded container walk. Document the remaining tokenizer limit: ordinary long
   words under `tokens` still qualify, while short words and brackets do not.

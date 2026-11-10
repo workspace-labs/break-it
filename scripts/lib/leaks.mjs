@@ -55,7 +55,12 @@ function nestedValues(text, start, parent, minimumLength, hits, review, quotedSp
     const char = text[cursor];
     if (char === '{' || char === '[') {
       if (depth < 64) frames.push({ close: char === '{' ? '}' : ']',
-        key: frames.at(-1)?.key ?? null, array: char === '[' });
+        key: frames.at(-1)?.key ?? null, array: char === '[',
+        pending: [], unquotedState: { closed: false } });
+      else if (depth === 64) {
+        // Delimiter types beyond the cap cannot certify these open frames.
+        for (const frame of frames) frame.pending = null;
+      }
       depth++;
       cursor++;
       continue;
@@ -63,7 +68,13 @@ function nestedValues(text, start, parent, minimumLength, hits, review, quotedSp
     if (char === '}' || char === ']') {
       // A mismatched close cannot justify inheriting into later siblings.
       if (depth <= 64 && frames.at(-1)?.close !== char) return cursor + 1;
-      if (depth <= 64) frames.pop();
+      if (depth <= 64) {
+        const frame = frames.pop();
+        if (frame.array && frame.pending) {
+          frame.unquotedState.closed = true;
+          for (const { target, item } of frame.pending) target.push(item);
+        }
+      }
       depth--;
       cursor++;
       if (!depth) return cursor;
@@ -126,14 +137,15 @@ function nestedValues(text, start, parent, minimumLength, hits, review, quotedSp
       } else {
         // Bound scalar fallback inside an unquoted element just as for a
         // quoted token; an embedded assignment must not consume the list tail.
-        if (frame?.array) quotedSpans.push({ start: valueStart, end: cursor, closed: false });
-        if (frame?.array && !placeholder(token[0], false) &&
+        if (frame?.array) quotedSpans.push({ start: valueStart, end: cursor, closed: false,
+          unquotedState: frame.unquotedState });
+        if (frame?.array && frame.pending && !placeholder(token[0], false) &&
             Array.from(token[0]).length >= minimumLength) {
           const item = { pattern: `generic nested ${parent}`, value: token[0], index: valueStart };
           const key = frame.key ?? '';
           if (valueKeys.has(key.toLowerCase()) || sensitiveName(key) || frame.key === null) {
-            hits.push(item);
-          } else review.push({ ...item, parent, key });
+            frame.pending.push({ target: hits, item });
+          } else frame.pending.push({ target: review, item: { ...item, parent, key } });
         }
         cursor = after;
       }
@@ -161,6 +173,8 @@ function genericSecrets(text, minimumLength) {
     if (quoteIndex < quotedSpans.length) {
       const span = quotedSpans[quoteIndex];
       if (field.index >= span.start) {
+        // Scalar fallback cannot revive an element from an unclosed list.
+        if (span.unquotedState && !span.unquotedState.closed) continue;
         if (span.key) {
           if (field.index !== span.start + 1 || field[1].length !== span.end - span.start - 2) continue;
         } else {
