@@ -35,8 +35,8 @@ run only on the owner's throwaway copy or on text piped from that copy.
   value with `=` or `:`, under the exact rules below. Candidates need at least
   9 characters. Output names the full field in lowercase, such as
   `generic db_password` or `generic apikey`.
-- **generic nested `<parent>`:** a string value inside an object or array of
-  objects assigned to a sensitive parent, such as `password={value:"…"}`.
+- **generic nested `<parent>`:** a value inside an object or list assigned to a
+  sensitive parent, such as `password={value:"…"}` or `secrets:["…"]`.
   The parent name is lowercased; the nested-value filters below apply.
 
 Word boundaries delimit provider shapes. When matches
@@ -82,7 +82,7 @@ token expired today” has no assignment and never matches.
   written escapes are inspected without decoding. A missing closing quote at
   end of input is conservatively treated as a candidate, including when a CLI
   reply was cut at its display cap.
-- Unquoted values extend to end of line or the first whitespace or `#` comment.
+- Unquoted scalar values extend to end of line or the first whitespace or `#` comment.
   An empty assignment never consumes an unquoted field from the following line;
   quoted literals may still follow assignment whitespace across a line break.
   Only the value is masked, never its surrounding assignment or whole line.
@@ -90,27 +90,32 @@ token expired today” has no assignment and never matches.
   CLI reply display also masks shorter named credential values; 8 characters
   or fewer use bullets.
 
-Object literals and arrays of objects beneath sensitive names are containers:
+Object literals and all lists beneath sensitive names are containers:
 their string values inherit the parent's sensitivity, even when an inner key
 is not sensitive, as in `password={value:"…"}` or `apiKey=[{k:"…"}]`.
+Lists are read element by element, including multi-line lists, nested lists and
+unquoted flow-style elements such as `password: [Hunter2Hunter2]`. Each eligible
+element is judged and masked on its own; empty lists and lists containing only
+short words are ignored. Unquoted elements use the unquoted placeholder/reference
+rules, so `[process.env.A]`, `[null]`, `[true]` and short numbers stay quiet.
 The scan ends at the matching close brace or bracket; braces inside quoted
 strings do not count. If no matching close exists in the current text, it stops
 at text end and considers the values seen so far. It never invents a container
 span beyond that text or attributes later sibling fields to a closed parent.
 Quoted object keys may contain punctuation, Unicode or escaped delimiters; they
-are not limited to the generic credential-name length. Existing scalar-array and
-brace-wrapped scalar candidates retain their masking behavior.
+are not limited to the generic credential-name length. Names and values after a
+list's matching `]` are scanned normally. Brace-wrapped scalar candidates retain
+their masking behavior.
 
 `tokens` is also an ordinary word in text-processing code, such as a tokenizer's
 word list. The name rule cannot distinguish that usage from credentials: long
-ordinary words in a bare `tokens: [...]` array can now be reported. Existing
-scalar-array masking is preserved, so
-`{"tokens":["understanding","the","world"]}` is a confirmed candidate for the
-whole array-shaped scalar span, including the final `}` in this compact form.
-It is not special-cased as safe text.
+ordinary words in a bare `tokens: [...]` list are still reported. For example,
+`{"tokens":["understanding","the","world"]}` reports only `understanding` as a
+confirmed element. The short words, brackets and final `}` are not candidates.
+The name is not special-cased as safe text.
 
-Each inner string value is checked with the same length, whitespace and
-placeholder/reference rules, then classified by its inner key:
+Each inner string value, and each unquoted list element, is checked with the same
+length, whitespace and placeholder/reference rules, then classified by its inner key:
 
 1. At least `minimumLength` characters (normally 9).
 2. No whitespace.

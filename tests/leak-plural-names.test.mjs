@@ -70,10 +70,10 @@ for (const name of ['status', 'keys', 'monkeys', 'turkeys', 'hotkeys', 'tokenize
   });
 }
 
-test('plural secrets array is confirmed with the preserved scalar-array mask', () => {
+test('plural secrets array confirms and masks the element on its own', () => {
   const source = '{"secrets":["aB3dE5fG7hJ9kL"]}';
-  // Compact unquoted scalar arrays retain punctuation through the next whitespace.
-  confirmed(source, '["aB3dE5fG7hJ9kL"]}');
+  confirmed(source, 'aB3dE5fG7hJ9kL');
+  assert.equal(findSecrets(source)[0].pattern, 'generic nested secrets');
 });
 
 test('plural apiKeys starts the nested walk and confirms stripe.value', () => {
@@ -96,12 +96,12 @@ test('plural inner keys use the shared name rule to confirm beneath singular par
   for (const name of missedNames) confirmed(JSON.stringify({ auth: { [name]: value } }));
 });
 
-test('documented tokenizer limit: bare tokens array reports ordinary long words as a scalar candidate', () => {
+test('documented tokenizer limit: tokens list reports ordinary long words individually', () => {
   const source = '{"tokens":["understanding","the","world"]}';
-  // This is a known false positive, including existing compact scalar punctuation.
-  confirmed(source, '["understanding","the","world"]}');
-  assert.equal(findSecrets(source)[0].pattern, 'generic tokens');
-  assert.equal(findSecrets(source)[0].value.length, 32);
+  // The name rule still flags long words, but list punctuation is not evidence.
+  confirmed(source, 'understanding');
+  assert.equal(findSecrets(source)[0].pattern, 'generic nested tokens');
+  assert.equal(findSecrets(source)[0].value.length, 13);
 });
 
 test('plural evidence is refused unmasked and accepted masked by the existing report guard', () => {

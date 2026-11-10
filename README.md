@@ -1,4 +1,4 @@
-# Break-it · 0.4.2
+# Break-it · 0.4.3
 
 ![break-it: find the hole a hacker would find, first](media/break-it-hero.png)
 
@@ -110,7 +110,10 @@ Nested string values inherit sensitivity from a parent such as `password`,
 within its matching container. Exact value-like or sensitive inner keys confirm
 eligible values; other keys, including `pass` and `argon`, go to the masked by-eye
 list. Bare array elements without their own key stay confirmed; arrays beneath an
-object field keep that field's key rule. See the four checks and limits in the
+object field keep that field's key rule. Lists are read element by element through
+the matching `]`, including multi-line and unquoted flow-style elements; brackets
+inside strings do not end the list. Each eligible element is masked on its own,
+and fields after the closing bracket are still scanned. See the four checks and limits in the
 pattern reference. Seal and copy diagnostics escape filename control characters so names cannot forge status lines.
 
 For C02, read the copy's history with plain git and pipe it straight into `mask`:
@@ -233,6 +236,6 @@ regression audit and merge verification are recorded in
 ## Coming next
 
 Future owner-approved versions may add injection, other settings checks,
-AI and desktop checks. They are not implemented in 0.4.2.
+AI and desktop checks. They are not implemented in 0.4.3.
 
 MIT licensed.

@@ -48,6 +48,7 @@ const valueKeys = new Set(['value', 'current', 'previous', 'data', 'raw', 'plain
 function nestedValues(text, start, parent, minimumLength, hits, review, quotedSpans) {
   const frames = [];
   const word = /[A-Za-z0-9_$][\w$.-]*/y;
+  const arrayValue = /[^\s,[\]{}"'`#]+/y;
   let depth = 0;
   let cursor = start;
   while (cursor < text.length) {
@@ -110,17 +111,32 @@ function nestedValues(text, start, parent, minimumLength, hits, review, quotedSp
       }
       continue;
     }
-    word.lastIndex = cursor;
-    const token = word.exec(text);
+    const tokenPattern = frame?.array ? arrayValue : word;
+    tokenPattern.lastIndex = cursor;
+    const token = tokenPattern.exec(text);
     if (token) {
-      cursor = word.lastIndex;
+      const valueStart = cursor;
+      cursor = tokenPattern.lastIndex;
       let after = cursor;
       while (/\s/.test(text[after] || '\0')) after++;
       if (frame && (text[after] === ':' || text[after] === '=') &&
           text[after + 1] !== '=' && text[after + 1] !== '>') {
         frame.key = token[0];
         cursor = after + 1;
-      } else cursor = after;
+      } else {
+        // Bound scalar fallback inside an unquoted element just as for a
+        // quoted token; an embedded assignment must not consume the list tail.
+        if (frame?.array) quotedSpans.push({ start: valueStart, end: cursor, closed: false });
+        if (frame?.array && !placeholder(token[0], false) &&
+            Array.from(token[0]).length >= minimumLength) {
+          const item = { pattern: `generic nested ${parent}`, value: token[0], index: valueStart };
+          const key = frame.key ?? '';
+          if (valueKeys.has(key.toLowerCase()) || sensitiveName(key) || frame.key === null) {
+            hits.push(item);
+          } else review.push({ ...item, parent, key });
+        }
+        cursor = after;
+      }
     } else cursor++;
   }
   return cursor;
@@ -136,7 +152,6 @@ function genericSecrets(text, minimumLength) {
   const unquotedValue = /[^\s#]+/y;
   const maskedValue = /(?:.{3}….{4}|••••) \(\d+ chars\)/y;
   let unquotedEnd = 0;
-  let arrayEnd = 0;
   let containerEnd = 0;
   let field;
   while ((field = fields.exec(text))) {
@@ -159,12 +174,10 @@ function genericSecrets(text, minimumLength) {
     if (start >= fieldLimit) continue;
     const fieldText = fieldLimit < text.length ? text.slice(0, fieldLimit) : text;
     const quoted = /["'`]/.test(text[start] || '\0');
-    // A retained array prefix already masks values inside this span. Keep
-    // looking for names whose value begins beyond it without rescanning tails.
-    if (start < arrayEnd) continue;
-    // Preserve scalar/brace-wrapped values, but inherit sensitivity inside
-    // objects and arrays of objects. Never re-walk an already covered span.
-    if (!quoted && !inQuotedValue && /^(?:\[\s*)*\{\s*(?:(?:(["'])(?:\\[^\r\n]|(?!\1)[^\\\r\n])*\1|[A-Za-z0-9_$][\w$.-]*)\s*[:=]|\})/.test(fieldText.slice(start))) {
+    // Lists and object values inherit sensitivity up to their matching close.
+    // Preserve brace-wrapped scalars; never re-walk an already covered span.
+    if (!quoted && !inQuotedValue && (text[start] === '[' ||
+        /^\{\s*(?:(?:(["'])(?:\\[^\r\n]|(?!\1)[^\\\r\n])*\1|[A-Za-z0-9_$][\w$.-]*)\s*[:=]|\})/.test(fieldText.slice(start)))) {
       if (start >= containerEnd && fieldLimit === text.length) {
         containerEnd = nestedValues(text, start, field[1].toLowerCase(), minimumLength, hits, review, quotedSpans);
       }
@@ -204,12 +217,6 @@ function genericSecrets(text, minimumLength) {
     const value = quoted ? match[2] : match[0];
     const parsedEnd = Math.min(quoted ? quotedValue.lastIndex : unquotedEnd, fieldLimit);
     fields.lastIndex = parsedEnd;
-    if (!quoted && text[start] === '[') {
-      // Preserve existing scalar-array masking, but allow an inner field name
-      // at this prefix's end to lead us to its value after the next whitespace.
-      arrayEnd = parsedEnd;
-      fields.lastIndex = start + 1;
-    }
     const ignored = placeholder(value, quoted);
     if (ignored && !quoted) {
       // An ignored read can precede another minified statement. Resume there

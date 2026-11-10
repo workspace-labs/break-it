@@ -18,7 +18,12 @@ function timedFind(mode, timeout = 3500) {
     const size = 1024 * 1024;
     const seed = Buffer.from('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789').toString('base64');
     const nestedQuoted = '+token=\\\\"';
+    const listRecord = '{"password":["a","b"],"label":"ordinary-setting"},';
+    const listPrefix = '"password":['.repeat(64);
+    const deepRecord = '"password":[null],';
     const input = mode === 'base64' ? seed.repeat(Math.ceil(size / seed.length)).slice(0, size)
+      : mode === 'minified-lists' ? listRecord.repeat(Math.floor(size / listRecord.length)).padEnd(size, ' ')
+      : mode === 'unclosed-lists' ? (listPrefix + deepRecord.repeat(Math.floor((size - listPrefix.length) / deepRecord.length))).padEnd(size, ' ')
       : mode === 'sibling-parents' ? Array.from({ length: 2000 }, (_, i) => 'password={child:{value:"sibling-SYNTHETIC-' + i.toString().padStart(4, '0') + '-0123456789",note:"' + 'ordinary words '.repeat(29) + '"}}').join('\\n').padEnd(size, ' ').slice(0, size)
       : mode === 'deep-parent' ? 'password={' + 'child:{'.repeat(63) + 'value:"${value}",note:"' + ' '.repeat(size - ('password={' + 'child:{'.repeat(63) + 'value:"${value}",note:"' + '"' + '}'.repeat(64)).length) + '"' + '}'.repeat(64)
       : mode === 'dotted' ? 'a.b.c.d.'.repeat(Math.ceil(size / 8)).slice(0, size)
@@ -84,6 +89,18 @@ for (const [mode, count] of [['sibling-parents', 2000], ['deep-parent', 1]]) {
     t.diagnostic(`${mode}: ${observed.elapsed.toFixed(2)} ms for one MiB`);
     assert.ok(observed.elapsed < 2000, 'each character is examined a bounded number of times');
     assert.equal(observed.hits.length, count, 'every inherited value is found once');
+  });
+}
+
+for (const mode of ['minified-lists', 'unclosed-lists']) {
+  test(`list values one MiB ${mode} stays below two seconds without rescanning`, t => {
+    const result = timedFind(mode, 3500);
+    assert.ok(!result.error, 'bounded list child finishes without hanging');
+    assert.equal(result.status, 0, 'list matching child exits successfully');
+    const observed = JSON.parse(result.stdout);
+    t.diagnostic(`${mode}: ${observed.elapsed.toFixed(2)} ms for one MiB`);
+    assert.ok(observed.elapsed < 2000, 'list containers are each walked at most once');
+    assert.equal(observed.hits.length, 0, 'short elements and null do not become credential findings');
   });
 }
 

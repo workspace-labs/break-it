@@ -553,3 +553,89 @@ Logs: `baseline-node20-loopback.log`, `baseline-node18-loopback.log`,
 `break-tries.json`, `preservation-check.json`, and baseline/final skill audits.
 No dependencies, push, tag, release or installation. Windows was not tested;
 the existing string parsing, depth-64 and bounded-window limits are unchanged.
+
+
+## 0.4.3 — list values end at their matching bracket (2026-11-10)
+
+Builder verification by Codex, delivered for Claude's independent review.
+Started on clean `main` at `29bc728d25b4db9ce3f366fe2c726502035be9cc`;
+`origin/main` was the same commit. The initial sandboxed Node 22.14.0 baseline
+found 395 tests: 364 passed, 31 failed because localhost listeners were denied
+(`listen EPERM`). No assertions were changed to accommodate the sandbox.
+An archived copy of the exact starting commit subsequently passed **395/395**
+on installed Node **18.20.8**, **20.20.2** and **22.23.1**, zero failures or skips.
+Those permitted synthetic-loopback baseline runs used the archive after working-tree
+edits began; the archive remains the unchanged pre-edit source.
+
+Before the scanner edit, the first 22 new functional tests ran against the old
+implementation: **4 passed, 18 expected failures**. Both new timing tests also
+failed their result assertions on the old implementation. Two additional edge
+regressions (assignment-like unquoted elements, punctuation/inherited keys) were
+checked afterwards against the archived old scanner: **0 passed, 2 failed**.
+The final list/performance run passed **44/44**.
+
+The new file `tests/leak-list-values.test.mjs` adds **24 tests**; the performance
+file adds **2**. Every requested table row is covered, plus line numbers,
+unquoted placeholders, nested lists, object-list classification, unclosed input,
+escaped strings, a one-MiB window boundary, element redaction, CLI scan output,
+and an embedded assignment that must not consume the closing bracket or sibling.
+The old `arrayEnd` scalar-list branch was removed; all lists use the existing
+64-frame walk and `containerEnd` protection. Unquoted element spans also bound
+scalar fallback, preserving normal scanning after the list.
+
+Full suites used each installed runtime's absolute path with `--test`, one final
+runtime at a time, with the existing synthetic localhost tests permitted:
+
+- Node **18.20.8**: **395 → 421**, all 421 passed; zero failures, cancellations or skips; 40.428 s. New one-MiB minified lists **93.60 ms**, 64-deep unclosed lists **126.08 ms**.
+- Node **20.20.2**: **395 → 421**, all 421 passed; zero failures, cancellations or skips; 39.274 s. New one-MiB minified lists **74.70 ms**, 64-deep unclosed lists **104.94 ms**.
+- Node **22.23.1**: **395 → 421**, all 421 passed; zero failures, cancellations or skips; 39.898 s. New one-MiB minified lists **80.69 ms**, 64-deep unclosed lists **96.36 ms**.
+
+Both new timing checks retain the **2,000 ms** limit. All original timing inputs,
+limits and assertions remain unchanged and pass; their diagnostics are in the
+full-suite logs. The minified list record is 47 bytes; the unclosed case includes
+many interior sensitive names beyond 64 frames to exercise no-rescan behavior.
+
+Existing test updates, and why:
+
+- `tests/leak-plural-names.test.mjs`: the plural secrets-list test now expects
+  its single element and `generic nested secrets`, instead of the swallowed
+  array-plus-brace span. The tokenizer-limit test now expects only
+  `understanding` (13 chars), retaining the honest long-word false positive.
+- `tests/report.test.mjs`: expected first-round banner becomes 0.4.3.
+- `tests/leak-performance.test.mjs`: only the two new fixtures/checks were added;
+  no pre-existing timing assertion was weakened.
+
+`node scripts/demo-shop.mjs --write` passed: **12 tried / 3 blocked / 9 got
+through**, then **12 / 12 / 0**. The regenerated example differs only on its
+first-line version banner. All approved `docs/`, walls, traps, plural-name rules,
+confirm/by-eye rules, network/load/copy/seal modules and every other untouched
+tracked file were compared with the starting commit. No dependency was added.
+
+Additional builder break-tries: **25/25 passed**, covering parent spellings,
+minified/multiline separators, closing brackets and commas inside strings,
+repeated redaction, unquoted references, inherited by-eye keys, mismatched closes,
+quoted bracket text and named-credential fallback beyond the frame cap.
+A separate helper code check reproduced the unquoted-assignment fallback issue;
+the bounded-token correction and regression pass. Claude's independent review
+is still pending.
+
+Static skill audit: **0 structural errors, 4 existing review notices**, unchanged
+codes, locations and messages from baseline: oversized hero asset, model-specific
+tools in README/evidence, and a historical personal path. Disposable collection
+folders named `break-it` preserve discovery identity; no installed copy changed.
+
+Known limits: this remains a string-aware heuristic tokenizer, not a language
+parser. Long ordinary quoted words under `tokens` remain findings. A bracket-index
+environment expression such as `password: [process.env["LONG_ENV_NAME"]]` may
+still flag the index name as a nested string; dotted `[process.env.A]` is ignored.
+The existing 64-frame, scalar and 4-KiB window-overlap limits remain; Windows was
+not tested. No AST parser or additional reference form was introduced.
+
+Evidence and pre-edit archive: `../break-it-043-20261110-codex-evidence/`.
+`break-it-043-baseline-node{18,20,22}.log`, `break-it-043-list-red.log`,
+`break-it-043-performance-red.log`, `break-it-043-extra-red.log`,
+`break-it-043-list-green.log`, `break-it-043-final-node{18,20,22}.log`,
+`break-it-043-demo-shop.log`, `break-it-043-break-tries.json`,
+`final-results.json`, `preservation-check.json`, baseline/final skill audits,
+`baseline-29bc728.tar` and `pre-edit-backups/` contain the builder evidence.
+One local commit only; no push, tag, release or installation.

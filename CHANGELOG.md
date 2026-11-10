@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.3] - 2026-11-10
+
+### Fixed
+
+- Read every credential list through the existing nested walk, element by element
+  through its matching closing bracket, including multi-line and unquoted lists.
+  Empty and short-word lists no longer raise false alarms or swallow later fields;
+  eligible elements are masked separately and following credentials keep their names.
+- Keep the existing filters, confirmed/by-eye classification, plural names and
+  bounded container walk. Document the remaining tokenizer limit: ordinary long
+  words under `tokens` still qualify, while short words and brackets do not.
+- Update the report banner and example report for 0.4.3, with list regression and
+  performance evidence.
+
 ## [0.4.2] - 2026-11-10
 
 ### Fixed
