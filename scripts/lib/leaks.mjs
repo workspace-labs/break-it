@@ -32,10 +32,12 @@ function placeholder(value, quoted = true) {
 function sensitiveName(name) {
   const words = name.replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[_\-.\s]+/);
-  const singles = new Set(['password', 'passwd', 'pwd', 'secret', 'token', 'auth',
-    'credential', 'credentials', 'apikey', 'privatekey', 'passwordhash']);
+  const singles = new Set(['password', 'passwords', 'passwd', 'passwds', 'pwd', 'pwds',
+    'secret', 'secrets', 'token', 'tokens', 'auth', 'credential', 'credentials',
+    'apikey', 'apikeys', 'privatekey', 'privatekeys', 'passwordhash', 'passwordhashes']);
   return words.some((word, index) => singles.has(word) ||
-    ['api key', 'private key', 'password hash'].includes(`${word} ${words[index + 1]}`));
+    ['api key', 'api keys', 'private key', 'private keys', 'password hash', 'password hashes']
+      .includes(`${word} ${words[index + 1]}`));
 }
 
 const valueKeys = new Set(['value', 'current', 'previous', 'data', 'raw', 'plain',

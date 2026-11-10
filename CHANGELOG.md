@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.2] - 2026-11-10
+
+### Fixed
+
+- Recognize explicit plural credential words and compound pairs in the shared
+  name rule, so plural scalar fields and nested parents reach the existing
+  detection, masking and report guard without a second name list.
+- Document and pin the tokenizer `tokens` array false-positive limit while
+  preserving scalar-array masking and the nested confirmed/by-eye rules.
+- Update the report banner and regenerate the example report for 0.4.2.
+
 ## [0.4.1] - 2026-11-10
 
 ### Fixed

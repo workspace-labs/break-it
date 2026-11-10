@@ -491,3 +491,65 @@ agent-name notice, historical machine path and historical agent-name notice).
 No installed mirror was updated. Audits use disposable folders named `break-it`
 to preserve the skill's discovery identity; baseline manifest and backup hashes
 match the original tracked files. This is static evidence, not runtime review.
+
+## 0.4.2 — plural credential names (2026-11-10)
+
+Builder verification by Codex, delivered for Claude's independent review.
+Started on clean `main` at `bdbec3db8b395527c7585872f4538b1ee7fc9d38`.
+Before any edits, installed Node **20.20.2** ran `node --test`: **298/298 passed**,
+zero failures, cancelled or skipped. The first sandboxed attempt discovered
+298 tests but had 31 `listen EPERM` failures; the permitted synthetic-loopback
+run established the green baseline. No test assertions were changed for that.
+
+The baseline on Node **18.20.8** and **22.23.1** was checked after implementation
+edits, against an archived copy with all 68 tracked files verified byte-identical
+to the starting commit: both passed **298/298**, zero failures or skips.
+
+Before the name-rule edit, the new plural regression file ran against the old
+implementation: **97 tests, 22 passed, 75 expected failures**. After the explicit
+plural additions, the focused plural/classification/report run passed **155/155**.
+The new file adds **97 tests**, including all 15 missed names in JSON, env,
+YAML-style scalar and JavaScript forms; remaining compact/plural-pair spellings;
+three already-caught names without duplicates; 13 required look-alikes plus
+`auths`, `tokenss`, `secretss`; nested confirmation and by-eye classification;
+scan/mask/report wiring; and the documented tokenizer-array false positive.
+
+Final full suites used each installed runtime's absolute path with `--test`
+and a separate evidence-local `TMPDIR` (macOS / Darwin arm64):
+
+- Node **18.20.8**: **298 → 395**, all 395 passed, zero failures/cancelled/skipped.
+- Node **20.20.2**: **298 → 395**, all 395 passed, zero failures/cancelled/skipped.
+- Node **22.23.1**: **298 → 395**, all 395 passed, zero failures/cancelled/skipped.
+
+All existing timing tests passed unchanged. Final suite durations were
+39.889 s / 39.040 s / 44.568 s respectively. The existing one-MiB stress
+diagnostics and limits are retained in the full logs; no timing assertion was
+relaxed. The Node 18/22 archived baseline suites ran concurrently; final suites
+ran one runtime at a time, with later baseline reruns overlapping Node 22.
+
+`node scripts/demo-shop.mjs --write` passed: round 1 **12 tried, 3 blocked,
+9 findings**; round 2 **12 tried, 12 blocked, 0 findings**. Only the example's
+first-line version changed, from 0.4.1 to 0.4.2. No production logic changed
+outside `sensitiveName()`; the report module changed only its banner. All other
+original test content, approved `docs/`, network/load/copy/seal code and walls
+remain byte-identical to the starting commit.
+
+Additional synthetic break-tries: **27 passed** for mixed-case and separated
+plural names, environment/dotted reads, GitHub Actions-style templates,
+placeholders, false pluralizations, parent closing boundaries, by-eye-only
+inner keys, repeated masking and short reply values. These are builder probes,
+not Claude's independent review. The tokenizer limit is intentionally retained:
+the compact `tokens` word-list example is one confirmed scalar-array candidate,
+including the trailing outer brace, just as for the singular control.
+
+Static skill audit: **0 structural errors, 4 existing review notices**, with
+unchanged findings from the baseline. Discovery identity is preserved in
+disposable collection folders named `break-it`. No installed copy was changed.
+
+Evidence and pre-edit Git archive: `../break-it-042-20261110-codex-evidence/`.
+Logs: `baseline-node20-loopback.log`, `baseline-node18-loopback.log`,
+`baseline-node22-loopback.log`, `plural-red.log`, `plural-green.log`,
+`final-node18.log`, `final-node20.log`, `final-node22.log`, `demo-shop.log`,
+`break-tries.json`, `preservation-check.json`, and baseline/final skill audits.
+No dependencies, push, tag, release or installation. Windows was not tested;
+the existing string parsing, depth-64 and bounded-window limits are unchanged.

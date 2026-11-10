@@ -58,11 +58,16 @@ is never retried from each character or shortened to a sensitive suffix. Names
 longer than 128 characters are outside this rule. Sensitive words can be
 the whole name or a component of a longer name, delimited by `_`, `-`, `.`, or a
 camelCase/PascalCase transition. Names are checked case-insensitively after
-tokenization. The sensitive words are `password`, `passwd`, `pwd`, `secret`,
-`token`, `auth`, `credential` and `credentials`; compound forms include
-`api_key`, `api-key`, `apikey`, `private_key` and `password_hash`, including their
-separated and camelCase/PascalCase equivalents. The unseparated words `apikey`,
-`privatekey` and `passwordhash` also qualify. Examples include `DB_PASSWORD`,
+tokenization. The sensitive words are `password`/`passwords`, `passwd`/`passwds`,
+`pwd`/`pwds`, `secret`/`secrets`, `token`/`tokens`, `auth`, and
+`credential`/`credentials`; compound forms include `api_key`/`api_keys`,
+`api-key`/`api-keys`, `private_key`/`private_keys` and
+`password_hash`/`password_hashes`, including their separated and
+camelCase/PascalCase equivalents. The unseparated words `apikey`/`apikeys`,
+`privatekey`/`privatekeys` and `passwordhash`/`passwordhashes` also qualify.
+Plural pairs are explicitly `api keys`, `private keys` and `password hashes`;
+there is no generic trailing-`s` removal, and `auths` or bare `keys` do not qualify.
+Examples include `DB_PASSWORD`,
 `STRIPE_SECRET_KEY`, `x-api-key`, `db.password`, `apiKey`, `accessToken`,
 `clientSecret`, `DbPassword` and `passwordHash`. A word merely containing those
 letters without a recognized boundary does not qualify.
@@ -95,6 +100,14 @@ span beyond that text or attributes later sibling fields to a closed parent.
 Quoted object keys may contain punctuation, Unicode or escaped delimiters; they
 are not limited to the generic credential-name length. Existing scalar-array and
 brace-wrapped scalar candidates retain their masking behavior.
+
+`tokens` is also an ordinary word in text-processing code, such as a tokenizer's
+word list. The name rule cannot distinguish that usage from credentials: long
+ordinary words in a bare `tokens: [...]` array can now be reported. Existing
+scalar-array masking is preserved, so
+`{"tokens":["understanding","the","world"]}` is a confirmed candidate for the
+whole array-shaped scalar span, including the final `}` in this compact form.
+It is not special-cased as safe text.
 
 Each inner string value is checked with the same length, whitespace and
 placeholder/reference rules, then classified by its inner key:

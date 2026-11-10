@@ -1,4 +1,4 @@
-# Break-it · 0.4.1
+# Break-it · 0.4.2
 
 ![break-it: find the hole a hacker would find, first](media/break-it-hero.png)
 
@@ -233,6 +233,6 @@ regression audit and merge verification are recorded in
 ## Coming next
 
 Future owner-approved versions may add injection, other settings checks,
-AI and desktop checks. They are not implemented in 0.4.1.
+AI and desktop checks. They are not implemented in 0.4.2.
 
 MIT licensed.

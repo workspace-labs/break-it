@@ -82,7 +82,7 @@ export async function reportRun(id, data) {
   const { receipt, identity } = await loadReceipt(id);
   validateReceipt(receipt, id);
   await verifySeal(receipt);
-  const header = data.round === 1 ? `BREAK-IT REPORT ${data.project} · version 0.4.1` : `ROUND ${data.round} ${data.project}`;
+  const header = data.round === 1 ? `BREAK-IT REPORT ${data.project} · version 0.4.2` : `ROUND ${data.round} ${data.project}`;
   const { tried, blocked, gotThrough } = data.attacks;
   const lines = [header, 'Seal: real project unchanged', `Attacks: ${tried} tried   ${blocked} blocked   ${gotThrough} got through`];
   const sorted = [...data.findings].sort((a, b) => Number(b.severity === 'CRITICAL') - Number(a.severity === 'CRITICAL'));
