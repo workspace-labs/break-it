@@ -404,3 +404,90 @@ Temporary logs: `/private/tmp/break-it-041-baseline-local.log`,
 `/private/tmp`). Reproduce the durable tests with each runtime's `node --test`;
 run `node scripts/demo-shop.mjs` for the demo. Local commit only; no push, tag,
 release or installation. Next gate: Claude review, then the owner's decision.
+
+### 0.4.1 fix round 1 — default nested values to by-eye (2026-11-10)
+
+Builder verification by Codex, delivered for Claude's re-review of F1 (ordinary
+settings falsely confirmed) and F2 (stale report banner). This subsection
+supersedes the original delivery's metadata-list classification and banner note
+above; that earlier record is retained as history. Version remains **0.4.1**.
+
+Start: clean `main` at `d0a6072dfdb0cc7687024e0a54ba06f46478a984`.
+Before production edits, installed Node **20.20.2** ran `node --test`:
+**270 passed, 0 failed, 0 cancelled, 0 skipped**. The runner discovered those
+270 tests before the new regression file was written. A prior restricted run
+on Node 22.14.0 found 239 passes and 31 localhost `listen EPERM` failures;
+the permitted synthetic loopback run established the green baseline.
+
+Old-code proof: the new classification tests and updated banner expectation
+ran against the old implementation: **35 passed, 22 expected failures** out of
+57. A later empty-key array regression failed **1/28** before distinguishing an
+absent key from an actual empty string. Both failures were corrected. The final
+focused run passed **82/82**. No trap or timing assertion was relaxed.
+
+Final full suites (`node --test`, each installed runtime's absolute path,
+separate `TMPDIR` per runtime, macOS / Darwin arm64): **270 → 298 tests**.
+
+- Node **18.20.8**: **298 passed, 0 failed/cancelled/skipped**, exit 0, **42.79 s**.
+- Node **20.20.2**: **298 passed, 0 failed/cancelled/skipped**, exit 0, **40.24 s**.
+- Node **22.23.1**: **298 passed, 0 failed/cancelled/skipped**, exit 0, **43.50 s**.
+
+The suites ran concurrently. Unchanged one-MiB timing tests retained their
+**2,000 ms** matching limits: sibling parents / depth 64 measured
+**310.48 / 200.50 ms** on Node 18, **58.33 / 40.16 ms** on Node 20,
+**72.63 / 36.04 ms** on Node 22. The unchanged deep named-prefix regression
+(`leak-nested.test.mjs`, originally line 88) passed both individual `< 2 s`
+assertions on every runtime; combined subtest durations were **3,112.51 /
+606.46 / 2,203.08 ms**, including both inputs and concurrent-run contention.
+
+The 28 new tests cover the ordinary auth fixture and real scan output, four
+extra settings false alarms, all 12 exact value-like names with uppercase and
+near-match controls, seven required confirmed shapes, `pass` and `argon`,
+object-key inheritance through arrays, empty-string keys, nested by-eye values,
+and GitHub/OpenAI/AWS/JWT/private-key provider evidence inside by-eye settings.
+Claude's fixture contains nine strings total: `jwt` fails the unchanged length
+filter; all **eight eligible strings** are masked by-eye, **zero confirmed**,
+and scan ends `No confirmed secrets — check the values above by eye`.
+A clean folder still prints `No secrets found`.
+
+Existing test changes are limited to three tests in
+`leak-nested-parent.test.mjs`: the 13-settings test now asserts the complete
+eligible key list; the `items` array case moved from its confirmed-only loop to
+explicit by-eye coverage; quoted field-like notes now assert one confirmed plus
+one masked by-eye value while keeping the unrelated-tail checks. The report
+shape test expects banner 0.4.1. The old metadata sample list remains only in
+tests to preserve coverage of all 16 previously reviewed settings names.
+
+Offline builder-assistance probes passed **11/11 groups**: realistic auth/OAuth/
+cloud settings, mixed and deep arrays, closing/malformed/unclosed boundaries,
+empty keys and long inputs. A **2,097,200-byte** minified fixture with **26,215**
+parents produced **26,215 confirmed + 26,215 by-eye** with no raw values in
+**664.72 ms**; unclosed 40,000 fields took **465.28 ms**; 100,000-deep mismatched
+nesting took **139.10 ms**. These Node 22.14.0 totals include find, review,
+redact, merged evidence and assertions; they are builder probes, not Claude's
+independent review.
+
+`node scripts/demo-shop.mjs --write` passed: **12/3/9**, then **12/12/0**.
+The banner appeared in `examples/shop-app-report.md`; regeneration changed
+only its first-line version from 0.4.0 to 0.4.1. No other CLI wording changed.
+Provider confirmation and shared mask/report wiring remain in place.
+Production metadata classification is removed: eligible non-value-like,
+non-sensitive keys now go to by-eye. A real secret under `pass` or `argon`
+therefore needs human inspection; it is never silently dropped.
+
+Evidence and full pre-edit backup: `../break-it-041-fix1-20261110-evidence/`.
+Logs: `tests-final-node18.log`, `tests-final-node20.log`,
+`tests-final-node22.log`, baseline/RED/focused logs, `demo-shop.log`,
+`coverage-map-break-tries.{mjs,log,json}` and before/after static skill audits.
+The original scan/mask/report command wiring, network/load/copy/seal code,
+`tests/walls.test.mjs`, `leak-nested.test.mjs`, `leak-performance.test.mjs`,
+`package.json`, `SKILL.md` and approved `docs/` are byte-identical to `d0a6072`.
+No dependencies, push, tag, release or installation. Windows not tested;
+existing quoted-string, depth-64 and bounded-window limits remain unchanged.
+
+Static skill re-audit: **0 structural errors, 4 review notices** before and after,
+with exactly identical finding records (existing oversized hero image, README
+agent-name notice, historical machine path and historical agent-name notice).
+No installed mirror was updated. Audits use disposable folders named `break-it`
+to preserve the skill's discovery identity; baseline manifest and backup hashes
+match the original tracked files. This is static evidence, not runtime review.

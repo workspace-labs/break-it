@@ -1,4 +1,4 @@
-BREAK-IT REPORT shop-app · version 0.4.0
+BREAK-IT REPORT shop-app · version 0.4.1
 Seal: real project unchanged
 Attacks: 12 tried   3 blocked   9 got through
 

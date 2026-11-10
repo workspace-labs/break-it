@@ -10,8 +10,14 @@
 - Separate settings-like inner keys into a masked “Check by eye” list, so a
   possible secret under a metadata key cannot produce a false `No secrets found`.
   Redaction masks those values too; the existing confirmed-hit exit codes stay unchanged.
-- Document the four nested-value filters and the incomplete metadata list;
-  add nested-parent, boundary, masking and performance regression evidence.
+- Fix round 1: default eligible nested values to masked by-eye evidence. Confirm
+  only exact value-like keys, existing sensitive names or bare array elements
+  without their own key; arrays beneath object fields keep that field's rule.
+  This prevents confirmed false alarms on ordinary auth settings without hiding
+  possible secrets under keys such as `pass` or `argon`. Remove metadata-list
+  classification while preserving the existing filters, walk and timing limits.
+- Correct the report banner to 0.4.1 and regenerate the example report. Document
+  the classification limit and add confirm/by-eye regression evidence.
 
 ## [0.4.0] - 2026-11-07
 

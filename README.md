@@ -107,9 +107,11 @@ header assignments, including names such as `DB_PASSWORD`, `client_secret`,
 references, placeholders and prose without an assignment are ignored. The same
 rule protects history masking and report evidence; see the exact rules above.
 Nested string values inherit sensitivity from a parent such as `password`,
-within its matching container; settings-like inner keys go to the by-eye list.
-See the four filters and limits in the pattern reference. Seal and copy
-diagnostics escape filename control characters so names cannot forge status lines.
+within its matching container. Exact value-like or sensitive inner keys confirm
+eligible values; other keys, including `pass` and `argon`, go to the masked by-eye
+list. Bare array elements without their own key stay confirmed; arrays beneath an
+object field keep that field's key rule. See the four checks and limits in the
+pattern reference. Seal and copy diagnostics escape filename control characters so names cannot forge status lines.
 
 For C02, read the copy's history with plain git and pipe it straight into `mask`:
 

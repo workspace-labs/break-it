@@ -58,7 +58,8 @@ test('13 innocent nested config values produce zero confirmed hits', () => {
   const text = JSON.stringify({ password: fields });
   assert.equal(Object.keys(fields).length, 13);
   assert.deepEqual(leaks.findSecrets(text), []);
-  assert.ok(review(text).every(item => metadata.includes(item.key)), 'only metadata needs by-eye review');
+  assert.deepEqual(review(text).map(item => item.key), ['provider', 'endpoint', 'env', 'strategy',
+    'policy', 'scheme', 'format', 'kind'], 'every eligible setting needs by-eye review');
 });
 
 test('matching close bounds inheritance before unrelated cache and build values', () => {
@@ -100,7 +101,7 @@ test('nested strings at any supported depth and array-of-objects values are foun
   for (const text of [
     `password=[{value:"${value}"}]`, `password=[{safe:0},{child:{raw:"${value}"}}]`,
     `password=[{}, {value:"${value}"}]`, `password=[ {value:"${value}"}]`,
-    `password={child:[{raw:"${value}"}]}`, `password={items:["${value}"]}`,
+    `password={child:[{raw:"${value}"}]}`,
     'password={' + 'child:{'.repeat(63) + `value:"${value}"` + '}'.repeat(64)
   ]) {
     const hits = leaks.findSecrets(text);
@@ -125,7 +126,12 @@ test('quoted field-like text inside a parent cannot rescan across its matching c
     `password={"note:password={":"inert-value-123",value:"${value}"};cache={bucket:"customer-uploads-eu-west-1"}`
   ]) {
     const hits = leaks.findSecrets(text);
-    assert.equal(hits.length, 2);
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0].value, value);
+    const byEye = review(text);
+    assert.equal(byEye.length, 1, 'non-value-like key remains visible by eye');
+    assert.ok(!leaks.redactSecrets(text).includes(`"${byEye[0].value}"`), 'raw quoted value is absent');
+    assert.ok(leaks.redactSecrets(text).includes(leaks.maskValue(byEye[0].value)));
     assert.ok(hits.some(hit => hit.value === value));
     assert.ok(hits.every(hit => !hit.value.includes('customer-uploads')));
     assert.ok(leaks.redactSecrets(text).endsWith(';cache={bucket:"customer-uploads-eu-west-1"}'));

@@ -96,23 +96,28 @@ Quoted object keys may contain punctuation, Unicode or escaped delimiters; they
 are not limited to the generic credential-name length. Existing scalar-array and
 brace-wrapped scalar candidates retain their masking behavior.
 
-Each inner string value must pass these four filters to become a confirmed
-`generic nested <parent>` hit:
+Each inner string value is checked with the same length, whitespace and
+placeholder/reference rules, then classified by its inner key:
 
 1. At least `minimumLength` characters (normally 9).
 2. No whitespace.
 3. Not one of the existing placeholders or reference forms described here.
-4. Its inner key is not a metadata key: `type`, `algorithm`, `provider`, `source`,
-   `strategy`, `endpoint`, `label`, `description`, `policy`, `scheme`, `format`,
-   `kind`, `mode`, `url`, `uri`, `env`.
+4. Confirm only an exact, case-insensitive value-like key (`value`, `current`,
+   `previous`, `data`, `raw`, `plain`, `key`, `k`, `v`, `primary`, `secondary`,
+   `default`), a key recognized by the sensitive-name rule above, or a bare array
+   element without a key of its own. Array values beneath a field in an object
+   keep that field's key rule: `credentials=[{region:["eu-west-1"]}]` is by-eye,
+   while `credentials=[{current:["…"]}]` is confirmed when otherwise eligible.
 
-Values failing filters 1–3 are silently ignored. A value passing those filters
-under a metadata key goes to the masked by-eye list instead of becoming a
-generic hit. The metadata list can never be complete: a real secret stored under
-`source` lands only in that list, which is exactly why the list exists. Read it
-before deciding what the result means. Independent provider-format matches still
-qualify as confirmed hits anywhere, including beneath metadata keys.
-Shared redaction masks by-eye values as well as confirmed hits.
+Values failing checks 1–3 are silently ignored. Every other eligible inner key
+goes to the masked by-eye list, never silently disappears. Ordinary settings
+such as `issuer`, `username` and `callbackUrl` therefore do not become confirmed
+generic hits. A real secret under a non-value-like key such as `pass` or `argon`
+is shown by eye, never confirmed by the generic nested rule. Read the list before
+deciding what the result means. The old metadata-key list is no longer used for
+classification. Independent provider-format matches still qualify as confirmed
+hits anywhere, including inside a by-eye value. Shared redaction masks by-eye
+values as well as confirmed hits.
 
 Nested container inspection is bounded to 64 levels. Deeper content is left to
 the existing scalar rules. A parent span is walked without repeatedly rescanning

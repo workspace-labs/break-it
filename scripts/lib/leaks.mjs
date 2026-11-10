@@ -38,8 +38,8 @@ function sensitiveName(name) {
     ['api key', 'private key', 'password hash'].includes(`${word} ${words[index + 1]}`));
 }
 
-const metadataKeys = new Set(['type', 'algorithm', 'provider', 'source', 'strategy', 'endpoint',
-  'label', 'description', 'policy', 'scheme', 'format', 'kind', 'mode', 'url', 'uri', 'env']);
+const valueKeys = new Set(['value', 'current', 'previous', 'data', 'raw', 'plain',
+  'key', 'k', 'v', 'primary', 'secondary', 'default']);
 
 // One iterative, string-aware walk per outer credential container. Keep at most
 // 64 frames; beyond that, count delimiters but leave detection to scalar rules.
@@ -52,7 +52,7 @@ function nestedValues(text, start, parent, minimumLength, hits, review, quotedSp
     const char = text[cursor];
     if (char === '{' || char === '[') {
       if (depth < 64) frames.push({ close: char === '{' ? '}' : ']',
-        key: frames.at(-1)?.key || '', array: char === '[' });
+        key: frames.at(-1)?.key ?? null, array: char === '[' });
       depth++;
       cursor++;
       continue;
@@ -68,7 +68,7 @@ function nestedValues(text, start, parent, minimumLength, hits, review, quotedSp
     }
     const frame = depth <= 64 ? frames.at(-1) : undefined;
     if (char === ',') {
-      if (frame && !frame.array) frame.key = '';
+      if (frame && !frame.array) frame.key = null;
       cursor++;
       continue;
     }
@@ -98,9 +98,11 @@ function nestedValues(text, start, parent, minimumLength, hits, review, quotedSp
         if (frame && !/\s/.test(value) && !placeholder(value, true) &&
             Array.from(value).length >= minimumLength) {
           const item = { pattern: `generic nested ${parent}`, value, index: valueStart };
-          if (metadataKeys.has(frame.key.toLowerCase())) {
-            review.push({ ...item, parent, key: frame.key });
-          } else hits.push(item);
+          const key = frame.key ?? '';
+          if (valueKeys.has(key.toLowerCase()) || sensitiveName(key) ||
+              frame.array && frame.key === null) {
+            hits.push(item);
+          } else review.push({ ...item, parent, key });
         }
         cursor = after;
       }
