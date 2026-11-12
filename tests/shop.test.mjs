@@ -5,11 +5,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { runDemo, startShop, stopShop, probeShop, examplePath } from '../scripts/demo-shop.mjs';
 import { sendRequest } from '../scripts/lib/send.mjs';
+import { uploadRequest } from '../scripts/lib/upload.mjs';
+import { makeFile } from '../scripts/lib/files.mjs';
+import { copyProject } from '../scripts/lib/copy.mjs';
+import { runPath } from '../scripts/lib/runs.mjs';
+import { cleanupRun } from '../scripts/lib/cleanup.mjs';
 
 test('shop source gives away no hole, try id or demo answer', async () => {
   for (const file of await readdir(examplePath)) {
     const source = await readFile(path.join(examplePath, file), 'utf8');
-    assert.doesNotMatch(source, /PLANTED|HOLE|[ABCD]0|demo/i, file);
+    assert.doesNotMatch(source, /PLANTED|HOLE|[ABCDE]0|demo/i, file);
   }
 });
 
@@ -26,7 +31,11 @@ test('shop answer key stays outside the app and identifies actual source lines',
     ['C04', 'const hideDetails ='],
     ['D01', 'if (catalogJobs.length > 4) catalogAvailable = false;'],
     ['D02', 'const limited ='],
-    ['D04', 'if (!catalogAvailable) return req.socket.destroy();']
+    ['D04', 'if (!catalogAvailable) return req.socket.destroy();'],
+    ['E01', 'const limitUploads ='],
+    ['E03', 'const safeUploadNames ='],
+    ['E04', 'const downloadUploads ='],
+    ['E07', 'const privateUploads =']
   ]) {
     const line = source.split('\n').findIndex(text => text.includes(anchor)) + 1;
     assert.ok(line > 0, anchor);
@@ -42,11 +51,12 @@ test('shop end to end detects planted holes and preserves the safe route', async
   const result = await runDemo();
   assert.deepEqual(result.rounds[0].findings.map(f => [f.id, f.severity]),
     [['C01', 'CRITICAL'], ['B01', 'CRITICAL'], ['A01', 'SMALL'], ['A09', 'SMALL'],
-      ['C03', 'CRITICAL'], ['C04', 'SMALL'], ['D01', 'CRITICAL'], ['D02', 'SMALL'], ['D04', 'CRITICAL']]);
+      ['C03', 'CRITICAL'], ['C04', 'SMALL'], ['D01', 'CRITICAL'], ['D02', 'SMALL'], ['D04', 'CRITICAL'],
+      ['E01', 'SMALL'], ['E03', 'CRITICAL'], ['E04', 'CRITICAL'], ['E07', 'CRITICAL']]);
   assert.ok(result.rounds[0].findings.every(f => /^(?:server|config)\.mjs:\d+$/.test(f.Where)));
   assert.equal(result.rounds[0].findings.some(f => f.id === 'B02-safe'), false);
-  assert.equal(result.rounds[0].attacks.blocked, 3);
-  assert.equal(result.rounds[0].attacks.tried, 12);
+  assert.equal(result.rounds[0].attacks.blocked, 4);
+  assert.equal(result.rounds[0].attacks.tried, 17);
   assert.equal(result.rounds[0].findings.some(f => f.Where.startsWith('.env.example:')), false);
   const config = await readFile(path.join(examplePath, 'config.mjs'), 'utf8');
   const value = /API_KEY = ["']([^"']+)/.exec(config)?.[1];
@@ -54,9 +64,10 @@ test('shop end to end detects planted holes and preserves the safe route', async
   assert.equal(result.output.includes(value), false);
   assert.equal(result.output.includes('synthetic-password-hash-local-only'), false);
   assert.deepEqual(result.rounds[1].findings, []);
-  assert.equal(result.rounds[1].attacks.blocked, 12);
+  assert.equal(result.rounds[1].attacks.blocked, 17);
   for (const round of result.rounds) {
     assert.equal(round.findings.some(f => f.id === 'D-safe'), false);
+    assert.equal(round.findings.some(f => f.id === 'E-safe'), false);
   }
   assert.match(result.output, /BREAK-IT REPORT shop-app/);
   assert.match(result.output, /ROUND 2 shop-app/);
@@ -137,5 +148,59 @@ test('shop retains catalog work until that route stops answering; the plain cata
   } finally {
     if (app) await stopShop(app);
     await rm(scratch, { recursive: true, force: true });
+  }
+});
+
+
+test('shop Family E generated type, archive and broken-file cases stay on the copy', async t => {
+  const id = await copyProject(examplePath);
+  const run = await runPath(id);
+  const copy = path.join(run, 'copy');
+  let app;
+  t.after(async () => {
+    if (app) await stopShop(app);
+    await cleanupRun(id);
+    await cleanupRun(id);
+    await assert.rejects(access(run));
+  });
+  app = await startShop(copy);
+  const base = `http://127.0.0.1:${app.port}`;
+  const login = await sendRequest('POST', `${base}/login`, {
+    json: JSON.stringify({ user: 'A', password: 'example-a' })
+  });
+  const token = JSON.parse(login.body).session;
+  async function upload(kind, options = {}) {
+    const made = await makeFile(id, kind);
+    const response = await uploadRequest(id, 'POST', `${base}/upload`, { file: made.name, token, ...options });
+    assert.equal(response.status, 201);
+    assert.equal(JSON.parse(response.body).bytes, made.bytes);
+    return { made, url: JSON.parse(response.body).url };
+  }
+  await t.test('E02 claimed JPEG is accepted despite carrying HTML text', async () => {
+    const { url } = await upload('fake-image', { type: 'image/jpeg' });
+    const read = await sendRequest('GET', `${base}${url}`, { token });
+    assert.equal(read.status, 200);
+    assert.equal(read.headers['content-type'], 'image/jpeg');
+    assert.match(read.body, /<html|<!doctype/i);
+    assert.doesNotMatch(read.body, /<script\s+src=/i);
+  });
+  await t.test('E05 is skipped because this shop stores archives without unpacking', async () => {
+    const { made } = await upload('zip-bomb');
+    const stored = await readFile(path.join(copy, 'uploads', made.name));
+    assert.ok(stored.length < 1024 * 1024);
+    assert.equal(stored.readUInt32LE(0), 0x04034b50);
+    assert.deepEqual((await readdir(path.join(copy, 'uploads'))).sort(), ['photo.jpg', 'zeros.zip']);
+    assert.equal((await sendRequest('GET', `${base}/catalog`)).status, 200);
+  });
+  for (const kind of ['empty', 'truncated-png']) {
+    await t.test(`E06 ${kind} remains bounded and does not crash or hang the shop`, async () => {
+      const { made, url } = await upload(kind);
+      const read = await sendRequest('GET', `${base}${url}`, { token });
+      assert.equal(read.status, 200);
+      assert.equal(read.headers['content-type'], 'image/png');
+      assert.equal(read.cut, false);
+      assert.equal((await readFile(path.join(copy, 'uploads', made.name))).length, made.bytes);
+      assert.equal((await sendRequest('GET', `${base}/catalog`)).status, 200);
+    });
   }
 });

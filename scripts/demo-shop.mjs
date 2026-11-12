@@ -2,7 +2,10 @@
 import { fork, spawnSync } from 'node:child_process';
 import { sendRequest } from './lib/send.mjs';
 import { runLoad } from './lib/load.mjs';
-import { mkdtemp, readFile, writeFile, cp, rm } from 'node:fs/promises';
+import { makeFile } from './lib/files.mjs';
+import { uploadRequest } from './lib/upload.mjs';
+import { runPath } from './lib/runs.mjs';
+import { mkdtemp, readFile, writeFile, cp, rm, realpath, readdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -104,7 +107,87 @@ async function probeLoad(port, where) {
   return { findings, blocked };
 }
 
-export async function probeShop(port, folder) {
+async function probeFiles(port, folder, runId, token, otherToken, where) {
+  const run = await runPath(runId);
+  const copy = path.join(run, 'copy');
+  const uploads = await realpath(path.join(folder, 'uploads'));
+  if (await realpath(folder) !== copy || path.relative(copy, uploads) !== 'uploads') {
+    throw new Error('Upload folder is not inside the disposable copy; stop Family E');
+  }
+  const base = `http://127.0.0.1:${port}`;
+  const findings = [];
+  let blocked = 0;
+  const normal = await makeFile(runId, 'normal-png');
+  const control = await uploadRequest(runId, 'POST', `${base}/upload`, { file: normal.name, token });
+  if (control.status !== 201) throw new Error('Normal upload safe control failed');
+  const normalUrl = JSON.parse(control.body).url;
+  const normalBytes = await readFile(path.join(run, 'files', normal.name));
+  const ownerRead = await sendRequest('GET', `${base}${normalUrl}`, { token });
+  if (ownerRead.status !== 200 || ownerRead.cut || ownerRead.body !== normalBytes.toString('utf8')) {
+    throw new Error('Normal upload owner-read safe control failed');
+  }
+  blocked++;
+  const big = await makeFile(runId, 'big');
+  const large = await uploadRequest(runId, 'POST', `${base}/upload`, { file: big.name, token });
+  const healthy = await sendRequest('GET', `${base}/catalog`);
+  if (healthy.status !== 200) throw new Error('Copy stopped answering after the oversized upload');
+  if (large.status >= 400 && large.status < 500) blocked++;
+  else if (large.status === 201 && JSON.parse(large.body).bytes === big.bytes) {
+    findings.push({ id: 'E01', severity: 'SMALL', title: 'Oversized uploads are accepted',
+      Tried: 'Uploaded a generated 20 MiB file to the disposable copy',
+      Saw: 'HTTP 201 accepted every byte; the copy stayed healthy',
+      Where: where('const limitUploads ='), Advice: 'Reject oversized uploads with a clear 4xx before reading the whole body' });
+  } else throw new Error('Inconclusive oversized-upload response');
+  const escaped = await uploadRequest(runId, 'POST', `${base}/upload`, { file: normal.name, name: 'traversal', token });
+  async function escapedFiles(dir, prefix = '') {
+    const found = [];
+    for (const item of await readdir(dir, { withFileTypes: true })) {
+      const relative = prefix + item.name;
+      if (item.isFile() && item.name.startsWith('break-it-escape-')) found.push(relative);
+      if (item.isDirectory()) found.push(...await escapedFiles(path.join(dir, item.name), relative + '/'));
+    }
+    return found;
+  }
+  const escapes = await escapedFiles(run);
+  const expectedEscape = `copy/break-it-escape-${runId}.txt`;
+  if (escapes.includes(expectedEscape)) {
+    if (escaped.status !== 201 || escapes.length !== 1) throw new Error('Unexpected traversal result');
+    findings.push({ id: 'E03', severity: 'CRITICAL', title: 'An upload can escape its upload folder',
+      Tried: 'Uploaded a generated PNG using the one-level traversal name preset',
+      Saw: `Found ${escapes.join(', ')} inside the run, outside the app upload folder`,
+      Where: where('const safeUploadNames ='), Advice: 'Reject path segments and keep every saved file inside the upload folder' });
+  } else if (escaped.status >= 400 && escaped.status < 500 && escapes.length === 0) blocked++;
+  else throw new Error('Inconclusive traversal-upload response');
+  const inlineTypes = [];
+  for (const kind of ['html-script', 'svg-script']) {
+    const made = await makeFile(runId, kind);
+    const posted = await uploadRequest(runId, 'POST', `${base}/upload`, { file: made.name, token });
+    if (posted.status !== 201) throw new Error('Script-marker upload did not return a file address');
+    const response = await sendRequest('GET', `${base}${JSON.parse(posted.body).url}`, { token });
+    if (response.status !== 200 || !response.body.includes('document.title')) throw new Error('Script-marker read failed');
+    const headers = response.headers;
+    if (/^(text\/html|image\/svg\+xml)\b/.test(headers['content-type'] || '') &&
+        !/attachment/i.test(headers['content-disposition'] || '') &&
+        !/sandbox/.test(headers['content-security-policy'] || '')) inlineTypes.push(headers['content-type']);
+  }
+  if (inlineTypes.length) findings.push({ id: 'E04', severity: 'CRITICAL', title: 'Uploaded script markers are served inline',
+    Tried: 'Uploaded generated HTML and SVG title markers, then fetched the returned file addresses',
+    Saw: `Served inline as ${inlineTypes.join(' and ')} without attachment or sandboxing CSP`,
+    Where: where('const downloadUploads ='), Advice: 'Serve untrusted active files as attachments or isolate them with a sandboxing policy' });
+  else blocked++;
+  const otherRead = await sendRequest('GET', `${base}${normalUrl}`, { token: otherToken });
+  const anonymousRead = await sendRequest('GET', `${base}${normalUrl}`);
+  if ([otherRead, anonymousRead].some(response => response.status === 200 && response.body === normalBytes.toString('utf8'))) {
+    findings.push({ id: 'E07', severity: 'CRITICAL', title: "Other people's private uploads are readable",
+      Tried: "Uploaded a generated PNG as user A; fetched its address as user B and without a login",
+      Saw: `User B received HTTP ${otherRead.status}; no login received HTTP ${anonymousRead.status}`,
+      Where: where('const privateUploads ='), Advice: 'Check the file owner before returning any private upload' });
+  } else if ([otherRead, anonymousRead].every(response => [401, 403, 404].includes(response.status))) blocked++;
+  else throw new Error('Inconclusive private-upload response');
+  return { findings, blocked };
+}
+
+export async function probeShop(port, folder, runId) {
   const source = await readFile(path.join(folder, 'server.mjs'), 'utf8');
   const where = anchor => {
     const index = source.split('\n').findIndex(line => line.includes(anchor));
@@ -116,6 +199,9 @@ export async function probeShop(port, folder) {
   });
   if (login.status !== 200 || !login.data.session) throw new Error('Control login failed');
   const token = login.data.session;
+  const otherLogin = runId ? await request(port, '/login', { method: 'POST',
+    data: { user: 'B', password: 'example-b' } }) : undefined;
+  if (runId && !otherLogin?.data.session) throw new Error('Second upload user login failed');
   const findings = [];
   let blocked = 0;
   for (const [route, id, anchor] of [
@@ -177,8 +263,20 @@ export async function probeShop(port, folder) {
   const load = await probeLoad(port, where);
   findings.push(...load.findings);
   blocked += load.blocked;
-  return { project: 'shop-app', findings,
-    attacks: { tried: 10, blocked, gotThrough: findings.length } };
+  if (runId) {
+    const files = await probeFiles(port, folder, runId, token, otherLogin.data.session, where);
+    findings.push(...files.findings);
+    blocked += files.blocked;
+  }
+  const skipped = [
+    { id: 'E02', reason: 'Claimed-type case covered by separate upload tests' },
+    { id: 'E05', reason: 'Shop stores archives without unpacking them; archive bytes covered by separate tests' },
+    { id: 'E06', reason: 'Empty and truncated PNG cases covered by separate upload tests' }
+  ];
+  if (!runId) skipped.push(...['E01', 'E03', 'E04', 'E07', 'E-safe'].map(id => ({
+    id, reason: 'No sealed run id provided to this standalone fixture probe' })));
+  return { project: 'shop-app', findings, skipped,
+    attacks: { tried: runId ? 15 : 10, blocked, gotThrough: findings.length } };
 }
 
 async function round(source, number, workspace, runFolders) {
@@ -196,7 +294,7 @@ async function round(source, number, workspace, runFolders) {
     }
     if (before.includes('.env.example:')) throw new Error('Placeholder safe control was flagged');
     app = await startShop(copy);
-    const findings = await probeShop(app.port, copy);
+    const findings = await probeShop(app.port, copy, runId);
     const after = cli('scan', runId);
     if (after !== before) throw new Error('Unexpected new file-scan result after synthetic tries');
     findings.attacks.tried += 2;
@@ -241,7 +339,8 @@ export async function runDemo() {
     const file = path.join(fixed, 'server.mjs');
     let source = await readFile(file, 'utf8');
     // Builder simulation is restricted to this synthetic fixture in the harness workspace.
-    for (const name of ['limited', 'validateEmpty', 'requireOwner', 'omitPrivate', 'hideDetails', 'releaseCatalogWork']) {
+    for (const name of ['limited', 'validateEmpty', 'requireOwner', 'omitPrivate', 'hideDetails', 'releaseCatalogWork',
+      'limitUploads', 'safeUploadNames', 'downloadUploads', 'privateUploads']) {
       source = source.replace(`const ${name} = false;`, `const ${name} = true;`);
     }
     await writeFile(file, source);

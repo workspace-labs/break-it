@@ -1,5 +1,8 @@
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { API_KEY } from './config.mjs';
 
 // All people, credentials and orders below are synthetic teaching data.
@@ -12,6 +15,9 @@ const attempts = new Map();
 const sessions = new Map();
 const catalogJobs = [];
 let catalogAvailable = true;
+const uploadsFolder = path.join(path.dirname(fileURLToPath(import.meta.url)), 'uploads');
+const uploadOwners = new Map();
+await mkdir(uploadsFolder, { recursive: true });
 
 function send(res, status, value) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -25,6 +31,29 @@ async function body(req) {
     if (text.length > 70000) throw new Error('Body too large');
   }
   return JSON.parse(text || '{}');
+}
+
+async function uploadedPart(req, res, limited) {
+  const boundary = /boundary=([^;]+)/.exec(req.headers['content-type'] || '')?.[1];
+  if (!boundary) { send(res, 400, { error: 'Multipart file required' }); return; }
+  if (limited && Number(req.headers['content-length']) > 1024 * 1024) {
+    send(res, 413, { error: 'File too large' });
+    return;
+  }
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (limited && size > 1024 * 1024) { send(res, 413, { error: 'File too large' }); return; }
+    chunks.push(chunk);
+  }
+  const bytes = Buffer.concat(chunks);
+  const split = bytes.indexOf('\r\n\r\n');
+  const end = bytes.lastIndexOf(Buffer.from(`\r\n--${boundary}--`));
+  const header = bytes.subarray(0, split).toString('utf8');
+  const name = /filename="([^"]*)"/.exec(header)?.[1];
+  if (!name || split < 0 || end < split + 4) { send(res, 400, { error: 'Invalid file part' }); return; }
+  return { name, bytes: bytes.subarray(split + 4, end) };
 }
 
 const server = http.createServer(async (req, res) => {
@@ -56,6 +85,31 @@ const server = http.createServer(async (req, res) => {
     }
     const user = sessions.get(req.headers.authorization?.replace('Bearer ', ''));
     if (!user) return send(res, 401, { error: 'Log in first' });
+    if (req.method === 'POST' && url.pathname === '/upload') {
+      const limitUploads = false;
+      const part = await uploadedPart(req, res, limitUploads);
+      if (!part) return;
+      const safeUploadNames = false;
+      if (safeUploadNames && (!/^[a-zA-Z0-9._-]{1,100}$/.test(part.name) || part.name.includes('..'))) {
+        return send(res, 400, { error: 'Invalid file name' });
+      }
+      await writeFile(path.join(uploadsFolder, part.name), part.bytes);
+      uploadOwners.set(part.name, user);
+      return send(res, 201, { url: `/uploads/${encodeURIComponent(part.name)}`, bytes: part.bytes.length });
+    }
+    if (req.method === 'GET' && url.pathname.startsWith('/uploads/')) {
+      const name = decodeURIComponent(url.pathname.slice('/uploads/'.length));
+      const privateUploads = false;
+      if (privateUploads && uploadOwners.get(name) !== user) return send(res, 403, { error: 'Not your file' });
+      let bytes;
+      try { bytes = await readFile(path.join(uploadsFolder, name)); }
+      catch { return send(res, 404, { error: 'No such file' }); }
+      const types = { '.png': 'image/png', '.jpg': 'image/jpeg', '.html': 'text/html', '.svg': 'image/svg+xml' };
+      const downloadUploads = false;
+      res.writeHead(200, { 'Content-Type': types[path.extname(name)] || 'application/octet-stream',
+        ...(downloadUploads ? { 'Content-Disposition': 'attachment', 'Content-Security-Policy': "sandbox; default-src 'none'" } : {}) });
+      return res.end(bytes);
+    }
     if (req.method === 'GET' && url.pathname === '/admin') {
       return user === 'admin' ? send(res, 200, { admin: true })
         : send(res, 403, { error: 'Admin only' });
