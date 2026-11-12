@@ -10,6 +10,7 @@
 - [W6: Nothing leaves this computer](#w6-nothing-leaves-this-computer)
 - [W7: Hook-friendly commands](#w7-hook-friendly-commands)
 - [W8: Bounded load only](#w8-bounded-load-only)
+- [W9: Generated files only](#w9-generated-files-only)
 
 These walls apply to every run, including a retest. The CLI handles file checks,
 copying, fingerprints, deletion, and report rendering. The reviewer remains
@@ -82,8 +83,9 @@ Never improvise deletion.
 
 ## W6: Nothing leaves this computer
 
-Use `send` for every per-request try and control request, targeting only the copy's
-localhost port. It sends one request with a 5-second deadline, never follows redirects or
+Use `send` for ordinary per-request tries and controls, and `upload` for Family E
+file requests, targeting only the copy's
+localhost port. `send` makes one request with a 5-second deadline, never follows redirects or
 retries, caps the entire request body at 64 KiB, and prints at most 2 KiB of the
 response body with a plain `(cut)` marker if truncated. It uses the same local URL
 check and refusal message as `check --url`. Never follow a redirect,
@@ -93,7 +95,12 @@ Use invented users, isolated local stores, and local test files. Never use real
 accounts, shared databases, or production data. If the copy cannot be made fully
 local without code changes, stop and explain the blocker. These reviewer checks
 are essential: the CLI does not intercept arbitrary app network traffic.
-`load` goes through `send` for every burst request and health probe; it adds no new network primitive.
+`load` goes through `send` for every burst request and health probe; `upload`
+reuses that same transport in `send.mjs`. Neither adds a new network primitive.
+The optional `send --headers` display shows only bounded Content-Type,
+Content-Disposition and Content-Security-Policy values needed for upload reads.
+That optional block is capped at 2 KiB; `(headers cut; incomplete evidence)`
+means its evidence is inconclusive. Upload's body and deadline caps are in W9.
 
 Leaks are inspected only in the copy. Use `scan` for files and copy-local logs;
 it reads text in bounded 1 MiB windows with 4 KiB overlap, up to 20 MiB per file,
@@ -108,7 +115,8 @@ responses as evidence.
 
 ## W7: Hook-friendly commands
 
-Use `node scripts/break-it.mjs` for check, copy, scan, mask, send, load, seal, cleanup, and report. Use
+Use `node scripts/break-it.mjs` for check, copy, scan, mask, send, load, make,
+upload, seal, cleanup, and report. Use
 Node's standard library for portable data handling. Do not use privileged shell
 commands, destructive shell shortcuts, downloaded installers, or Git history
 rewrites. The one plain-git exception reads history from the copy and pipes it
@@ -138,3 +146,36 @@ Cancelled requests appear only in the first line, never a status bucket;
 `no status` counts genuine failures, including `send`'s own 5-second timeout.
 Use isolated local test data and disposable sessions. A successful bounded burst
 on an ordinary route is a safe control and must never be reported as a hole.
+
+## W9: Generated files only
+
+Before any Family E try, find where the copy saves uploads and unpacks archives.
+The actual resolved folders must be inside that copy. If configuration points to
+an absolute path outside the copy, a cloud bucket or a shared folder, STOP the
+family and record each affected try as skipped with the reason. Never let a
+try write outside the copy. A copied app is not a filesystem sandbox; establish
+its storage behavior before sending a file.
+
+Break-it makes every test file itself through `make`, from a fixed built-in list,
+inside `<runPath(id)>/files/`. Never download a payload, create one by hand or
+pass a file of your own. The only script marker sets the title to `break-it`;
+there are no network scripts. `upload --file` reads only a bare made filename
+from that folder, refusing slash, backslash, `..`, missing files and symbolic-link
+substitutes. The `--name` option accepts fixed presets only and affects the
+multipart part header, never the local input path. Its traversal preset is
+exactly one level up: `../break-it-escape-<runId>.txt`.
+
+Large files are streamed, default 20 MiB and hard cap 50 MiB. The ZIP contains
+one zeros entry, exactly 100 MiB unpacked, under 1 MiB compressed, never nested.
+Try it only when the copy unpacks archives; watch that copy's disk use and
+memory and stop on an observed outage. The whole multipart body is capped at
+51 MiB. Upload makes one POST or PUT request using send's localhost/literal
+loopback transport, no redirects and no retries, with a 5-second deadline.
+Only `big` receives a 30-second deadline, stated in the output. Its masked
+reply body stays capped at 2 KiB. No input file is held in memory in full.
+MiB means 1,048,576 bytes; `--mb N` uses that unit.
+
+After the tries, list any `break-it-escape-*` files inside the copy or its run
+folder as E03 evidence. The existing cleanup deletes the made files with the
+whole run. Keep findings outside the run, then complete seal, cleanup and report
+as usual; do not add a separate deletion command.

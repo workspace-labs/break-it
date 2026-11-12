@@ -14,7 +14,7 @@ test('W7 skill and references contain no banned command words or shell shortcuts
     const commands = text.split('\n').filter(line => /^\s*(?:node|npm|npx|python|bash|sh|git|cd)\s/.test(line));
     for (const command of commands) {
       if (command.trim() === 'git -C "<copy>" log -p --all --no-color | node scripts/break-it.mjs mask') continue;
-      assert.match(command.trim(), /^node scripts\/break-it\.mjs (?:check|copy|seal|cleanup|report|send|scan|mask|load)\b/, file);
+      assert.match(command.trim(), /^node scripts\/break-it\.mjs (?:check|copy|seal|cleanup|report|send|scan|mask|load|make|upload)\b/, file);
     }
   }
 });

@@ -48,6 +48,19 @@ For C02 history, use `<file>:<line> -> commit <7-char hash>` with the actual
 historical line. The relative file and positive line keep the existing location
 contract; the commit identifies the inspected version. Never paste raw history.
 
+Family E uses E01 (too big), E02 (claimed type), E03 (dangerous names), E04
+(inline script content), E05 (unbounded archive extraction), E06 (broken files)
+and E07 (another user's private upload). Keep the same Tried/Saw/Where/Advice
+contract and real `file:line` in the tested copy. Describe generated kind,
+bounded size, sent-name preset and the actual storage/read outcome, including
+response-header evidence for E04 and relative traversal-marker locations for
+E03. Use a unique descriptive suffix for distinct cases, such as `E03-arabic`,
+when several findings share a family id. A safe image that works for its owner
+is blocked against the attempted failure, never a finding.
+If upload storage is outside the copy, record the affected E ids as skipped
+with that reason. E05 is skipped when the app does not unpack archives; skips
+and inconclusive tries never inflate completed counts.
+
 Every finding needs a nonempty id, title, **Tried**, **Saw**, **Where**, **Advice**
 and a severity of **CRITICAL** or **SMALL**. Report rejects missing evidence rather
 than filling it in. State the observed effect and test boundary without private
@@ -72,7 +85,7 @@ not emit secret-bearing evidence or consume its cleanup receipt.
 ## Output shape
 
 ```text
-BREAK-IT REPORT shop-app · version 0.3.1
+BREAK-IT REPORT shop-app · version 0.5.0
 Seal: real project unchanged
 Attacks: 2 tried   1 blocked   1 got through
 

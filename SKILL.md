@@ -1,9 +1,9 @@
 ---
 name: break-it
-description: "Use when an independent reviewer asks to break, attack, or stress-test their own project before release, on a throwaway localhost copy. Tests bad input, access control, resilience under bounded load, and leaks: secrets in files/history, over-sharing replies, error details and logs. Reports holes. Never for the builder testing their own delivery, live sites, other people's systems, code fixes or performance benchmarking."
+description: "Use when an independent reviewer asks to break, attack, or stress-test their own project before release, on a throwaway localhost copy. Tests bad input, access control, bad file uploads, resilience under bounded load, and leaks: secrets in files/history, over-sharing replies, error details and logs. Reports holes. Never for the builder testing their own delivery, live sites, other people's systems, code fixes or performance benchmarking."
 ---
 
-# Break-it 0.4.4
+# Break-it 0.5.0
 
 Find holes in the owner's own project before release. Only the independent reviewer
 (scanner) uses this skill. It reports evidence in plain words; it never fixes code.
@@ -42,8 +42,9 @@ the app's working folder separately. Do not install tools or dependencies.
 1. Read what the delivered change was meant to do, from the card or the owner's
    words. Read [bad user & crashes](references/attacks-bad-user.md),
    [other people's data](references/attacks-other-data.md),
-   [leaks](references/attacks-leaks.md), and
-   [load: many users at once](references/attacks-load.md). Pick applicable tries;
+   [leaks](references/attacks-leaks.md),
+   [load: many users at once](references/attacks-load.md), and
+   [bad files: uploads](references/attacks-files.md). Pick applicable tries;
    record each inapplicable try in the optional findings JSON `skipped` list,
    for example `{"id":"A07","reason":"No create or update route to submit twice"}`.
    Use unique ids that do not also appear in findings. Skips never change counts.
@@ -107,6 +108,37 @@ the app's working folder separately. Do not install tools or dependencies.
    Observe the summary and whether the app still answers. A healthy normal route
    absorbing a burst is a safe control, never a hole. Stop on an observed outage;
    do not repeat damaging bursts or use this as a performance benchmark.
+
+   For Family E, first find the copy's actual upload storage and any extraction
+   folder, resolving configuration and links. If either is outside the copy
+   (an outside absolute path, cloud bucket or shared folder), STOP the family and
+   record the affected E ids as skipped with a reason. Never let these tries
+   write outside the copy. Make every test file through the fixed built-in list;
+   never download, hand-build or supply your own file:
+
+   ```text
+   node scripts/break-it.mjs make <run-id> normal-png
+   node scripts/break-it.mjs upload <run-id> POST http://localhost:4000/upload --file normal.png --token LOCAL_TEST_SESSION
+   node scripts/break-it.mjs send GET http://localhost:4000/uploads/normal.png --token LOCAL_TEST_SESSION
+   ```
+
+   `make` writes only inside the run's `files/`. `big` defaults to 20 MiB, accepts
+   `--mb N` up to 50 MiB and is streamed. The fixed `zip-bomb` has one 100 MiB
+   zeros entry, stays under 1 MiB compressed, and is never nested; skip E05 if
+   the app does not unpack archives. `upload` accepts POST or PUT and one bare
+   made filename, never a path or symlink substitute. Its multipart body is
+   capped at 51 MiB; it retains localhost/literal-loopback, no-redirect/no-retry,
+   2 KiB masked reply and a 5-second deadline, extended to 30 seconds only for
+   `big` and stated in its output. Use the fixed `--name` presets from the
+   reference, never free text; `--field` and `--type` set the part field and
+   claimed content type. The only script payload changes the document title.
+   For E04 and E07, use `send GET` on the returned localhost address. E04 needs
+   `--headers` to inspect the bounded Content-Type, Content-Disposition and
+   Content-Security-Policy headers. A cut header block is incomplete evidence.
+   Check both owner and other-user reads and
+   keep the valid-image control unflagged. After the tries, list any
+   `break-it-escape-*` files inside the copy or its run folder as E03 evidence.
+   Stop on an observed crash or outage. Cleanup removes `files/` with the run.
 5. Log each got-through try with its id, severity, title, **Tried, Saw, Where,
    Advice**. Locate the actual line in the copy, expressed as a relative `file:line`.
    Keep evidence outside the run folder so cleanup cannot erase the report input.

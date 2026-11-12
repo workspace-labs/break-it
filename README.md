@@ -1,4 +1,4 @@
-# Break-it · 0.4.4
+# Break-it · 0.5.0
 
 ![break-it: find the hole a hacker would find, first](media/break-it-hero.png)
 
@@ -7,7 +7,11 @@ local copy. Break-it helps find bad-input failures and cases where one user can
 read another user's data. Family C also finds leaked keys/passwords in files and
 old git commits, replies that expose private fields, errors that reveal internal
 details, and logs that keep private data. Family D helps you see if your app
-survives many users at once, safely, on a throwaway copy. It reports what
+survives many users at once, safely, on a throwaway copy. Family E checks bad
+file uploads: files that are too large, pretend to be images, have awkward
+names, contain a harmless script marker, expand when unpacked, are broken, or
+can be read by the wrong user. Break-it makes every test file itself, within
+fixed size limits. It reports what
 happened, where, and what to fix.
 The builder fixes the holes; Break-it never fixes them.
 
@@ -35,7 +39,7 @@ node scripts/demo-shop.mjs
 ```
 
 This starts only temporary copies on a free loopback port. It tests bad-input,
-access-control, leak and bounded-load cases with safe controls, simulates builder
+access-control, leak, bounded-load and upload cases with safe controls, simulates builder
 fixes in synthetic scratch source,
 then tests a fresh copy again. Nothing in your real project is changed.
 
@@ -50,6 +54,9 @@ then tests a fresh copy again. Nothing in your real project is changed.
 - Keep data and app integrations local; `send` makes one bounded localhost request.
 - `load` checks resilience on that copy only: at most 2,000 burst requests,
   50 in flight and 30 seconds, followed by one health probe.
+- Uploads use only files made by Break-it inside that temporary run. Check
+  first that the app saves and unpacks uploads inside its copy; otherwise skip
+  the family with a reason.
 - Run the portable Node commands. No downloaded tools or dependencies.
 
 A copy is not an operating-system sandbox. Before starting any real app, verify
@@ -68,6 +75,9 @@ node scripts/break-it.mjs scan RUN_ID
 node scripts/break-it.mjs send POST http://localhost:4000/login --json '{"user":"A","password":"invented"}'
 node scripts/break-it.mjs send GET http://localhost:4000/orders/6 --token LOCAL_TEST_SESSION
 node scripts/break-it.mjs load GET http://localhost:4000/health --requests 20 --concurrency 2 --duration 1
+node scripts/break-it.mjs make RUN_ID normal-png
+node scripts/break-it.mjs upload RUN_ID POST http://localhost:4000/upload --file normal.png --token LOCAL_TEST_SESSION
+node scripts/break-it.mjs send GET http://localhost:4000/uploads/normal.png --headers --token LOCAL_TEST_SESSION
 node scripts/break-it.mjs scan RUN_ID
 node scripts/break-it.mjs seal RUN_ID
 node scripts/break-it.mjs cleanup RUN_ID
@@ -142,6 +152,44 @@ the entire UTF-8 body, including its JSON envelope, must fit within 64 KiB.
 up to 2 KiB of response body, with detected secrets masked before CLI display
 and `(cut)` when truncated. A timeout or unseen
 response content is inconclusive, never evidence of a hole by itself.
+Optional `--headers` prints only bounded Content-Type, Content-Disposition and
+Content-Security-Policy values, so the reviewer can check how an uploaded file
+is served without exposing other response headers. This optional block has its
+own 2 KiB cap; `(headers cut; incomplete evidence)` means the headers cannot
+establish the result of a try.
+
+[Family E: bad files](references/attacks-files.md) adds `make` and `upload`.
+Before these tries, find the copy's actual upload folder, including any archive
+extraction folder. If it points outside the copy, to a cloud bucket or to shared
+storage, stop this family and record why it was skipped. Break-it cannot sandbox
+an app's storage; confirm this before sending any file.
+
+`make RUN_ID KIND` creates one fixed test file under that run's `files/` folder
+and prints its name, byte count and description. Available kinds are
+`normal-png`, `big`, `fake-image`, `html-script`, `svg-script`, `zip-bomb`,
+`empty` and `truncated-png`. Never download a test file, build one by hand or
+provide a file of your own. The script examples only change the document title
+to `break-it`. `big --mb N` streams zeros, defaults to 20 MiB and cannot exceed
+50 MiB; MiB is 1,048,576 bytes. The ZIP is under 1 MiB and contains one fixed
+100 MiB zeros entry, never nested. Skip that try unless the app unpacks archives.
+
+`upload RUN_ID POST URL --file MADE_NAME` sends one streamed multipart file.
+PUT is also allowed. The file name must be bare and refer to a file made in that
+run; paths, `..`, and symbolic-link substitutes are refused. `--field` defaults
+to `file`; `--type` changes the claimed content type; `--token` uses a disposable
+local bearer as with `send`. `--name` takes only the presets `traversal`,
+`null-byte`, `long`, `arabic`, `emoji`, and `reserved`, never arbitrary text.
+These change only the filename sent in the multipart header; the traversal
+preset goes exactly one level up, using a run-specific marker name.
+
+The whole upload body, including framing, cannot exceed 51 MiB. It retains
+send's literal-loopback connection, no redirects or retries, masked 2 KiB reply
+and a 5-second deadline; only `big` gets a stated 30-second deadline. Use
+`send GET` for the returned local address to check script-serving headers and
+whether B can read A's private file. A valid PNG that its owner uploads and
+reads normally is a safe control. After the tries, record any
+`break-it-escape-*` files inside the copy or run folder as traversal evidence.
+Cleanup deletes all made files with the run; there is no separate cleanup step.
 
 After the individual tries, [Family D](references/attacks-load.md) uses `load` to
 check crashes under many users, missing limits on sensitive routes, errors that
@@ -195,7 +243,8 @@ report receipt. Preserve the alarm; never turn it into a clean report.
 The CLI is a safety shell with bounded secret-pattern checks, not a complete
 security scanner. The agent adapts the [bad-user](references/attacks-bad-user.md),
 [access-control](references/attacks-other-data.md),
-[leak](references/attacks-leaks.md), and [load](references/attacks-load.md)
+[leak](references/attacks-leaks.md), [load](references/attacks-load.md), and
+[bad-file upload](references/attacks-files.md)
 try lists to the intended change.
 Count completed tries, including safe controls; put inapplicable ids and reasons
 in the optional findings JSON `skipped` list and disclose inconclusive tries in
@@ -203,21 +252,24 @@ review notes. Skips never change counts. Findings at the same file and line get
 a same-cause note. A report needs at least one completed logical try.
 A passing run proves only what was tried.
 
-## Example: orders, leaks and load
+## Example: orders, leaks, load and uploads
 
 The full [generated report](examples/shop-app-report.md) is real CLI output.
 Round 1 demonstrates another customer's order, input/login failures, a fake key
 kept in configuration, a profile reply exposing a password-hash field, and an
 error revealing internal details. It also demonstrates a route that fails under
 a small burst, fails its recovery probe, and an unlimited login route. A healthy
-normal route stays unflagged. Round 2 repeats the tries on a fresh copy of
+normal route stays unflagged. Upload cases demonstrate an oversized file,
+a one-level traversal name, inline script content and another user's private
+file, while a valid image for its owner stays unflagged. Round 2 repeats the tries on a fresh copy of
 the harness's fixed scratch source and finds no remaining holes. The original
 example app is untouched.
 
 Every finding includes Tried, Saw, Where and Advice. Secret evidence is masked;
 private fields can be named without copying their values. The safe order route
 must block the other user's record, and `.env.example` stays unflagged.
-The example does not claim C02/C05 coverage; those are exercised in tests.
+The example does not claim C02/C05 or E02/E05/E06 coverage; those are exercised
+in tests. The traversal marker stays inside the temporary run.
 
 ## Verify locally
 
@@ -236,6 +288,6 @@ regression audit and merge verification are recorded in
 ## Coming next
 
 Future owner-approved versions may add injection, other settings checks,
-AI and desktop checks. They are not implemented in 0.4.4.
+AI and desktop checks. They are not implemented in 0.5.0.
 
 MIT licensed.

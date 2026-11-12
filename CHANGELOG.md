@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.0] - 2026-11-13
+
+- Add Family E bad-file upload checks E01–E07 and the valid-image safe control,
+  restricted to the owner's throwaway localhost copy with upload storage inside it.
+- Add `make` for eight fixed harmless files and `upload` for one streamed
+  multipart file per request. Generated files stay in the run; large files,
+  compressed zeros, request bytes and deadlines have hard caps. Upload names are
+  fixed presets, and local input paths and symbolic-link substitutes are refused.
+- Share send's loopback-only transport, no redirects/retries and bounded reply;
+  add opt-in bounded response headers so script-serving evidence can be checked.
+- Extend the synthetic shop and its scratch repair demo with size, filename,
+  inline-script and private-file access cases; regenerate its report from real
+  responses. Add regression tests while retaining the existing safety walls.
+
 ## [0.4.4] - 2026-11-10
 
 ### Fixed
