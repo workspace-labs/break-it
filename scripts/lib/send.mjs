@@ -119,7 +119,9 @@ export function sendFileRequest(method, input, { source, length, boundary, token
   }
   if (!/^[a-zA-Z0-9-]{1,80}$/.test(boundary)) throw new Error('Refused: invalid multipart boundary.');
   const headers = { Host: url.host, 'Content-Type': `multipart/form-data; boundary=${boundary}`,
-    'Content-Length': length };
+    'Content-Length': length, Connection: 'keep-alive' };
+  // Let early refusals arrive before the server closes with unread input.
+  // agent:false and finish() still make this a single-use socket, never a pool.
   if (token !== undefined) headers.Authorization = `Bearer ${token}`;
   const bounded = Readable.from((async function* () {
     let sent = 0;

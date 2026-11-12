@@ -58,6 +58,11 @@ symbolic-link substitutes, are refused. Optional `--field` defaults to `file`;
 `--type` changes the claimed content type for E02. `--token` follows `send`'s
 bearer rules. The body including multipart framing is capped at 51 MiB.
 The localhost, literal-loopback, no-redirect and no-retry walls remain. The
+upload allows the server to keep the connection open for its reply, then closes
+its single-use socket after that reply; connections are never pooled or reused.
+If a server forcibly resets before a response arrives, record an inconclusive
+request failure, never infer that it accepted or refused the file.
+The
 deadline is 5 seconds, extended to 30 seconds only for `big`, stated in its
 output. The reply body stays capped at 2 KiB and is masked before CLI display.
 A timeout or cut reply alone does not establish a hole.

@@ -12,6 +12,8 @@ test('an early 413 stops a streamed big upload and leaves the next control usabl
   const normal = await makeFile(run.id, 'normal-png');
   const sockets = new Set();
   let earlyRequests = 0;
+  let resetRequests = 0;
+  const connections = [];
   const received = [];
   const app = http.createServer((req, res) => {
     if (req.url === '/reject') {
@@ -19,8 +21,12 @@ test('an early 413 stops a streamed big upload and leaves the next control usabl
       const observed = { bytes: 0 };
       received.push(observed);
       req.on('data', chunk => { observed.bytes += chunk.length; });
-      res.writeHead(413, { Connection: 'close' });
+      connections.push(req.headers.connection);
+      res.writeHead(413);
       res.end('File too large');
+    } else if (req.url === '/reset') {
+      resetRequests++;
+      req.socket.destroy();
     } else {
       req.resume();
       req.once('end', () => { res.writeHead(201); res.end('Saved'); });
@@ -45,9 +51,12 @@ test('an early 413 stops a streamed big upload and leaves the next control usabl
   const control = await uploadRequest(run.id, 'POST', base + '/control', { file: normal.name });
   assert.equal(control.status, 201);
   assert.equal(earlyRequests, 3);
+  assert.ok(connections.every(value => value === 'keep-alive'), 'allow the early reply to arrive before closing our single-use socket');
   assert.ok(Date.now() - start < 5000, 'early 4xx does not wait for the big-upload deadline');
   assert.ok(received.length > 0);
   assert.ok(received.every(({ bytes }) => bytes < big.bytes), 'early rejection stops sending before the whole file');
+  await assert.rejects(uploadRequest(run.id, 'POST', base + '/reset', { file: normal.name }), /EPIPE|ECONNRESET|socket hang up/);
+  assert.equal(resetRequests, 1, 'a reset is reported without retry');
   // Exercise cleanup after repeated early stream destruction, while the server
   // remains alive. No file handle or pending request may delay the operation.
   await cleanupRun(run.id);
