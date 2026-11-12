@@ -1,6 +1,7 @@
 import http from 'node:http';
 import https from 'node:https';
 import { StringDecoder } from 'node:string_decoder';
+import { Readable } from 'node:stream';
 import { checkUrl } from './target.mjs';
 
 const bodyLimit = 64 * 1024;
@@ -34,6 +35,12 @@ export async function sendRequest(method, input, { json, token, signal } = {}) {
     headers['Content-Length'] = Buffer.byteLength(json);
   }
   if (token !== undefined) headers.Authorization = `Bearer ${token}`;
+  return requestOnce(method, url, { headers, json, signal });
+}
+
+// Both JSON and file requests use this single transport. No DNS, proxy,
+// redirect or retry path is available to either caller.
+function requestOnce(method, url, { headers, json, source, signal, deadline = 5000 }) {
   // Pin localhost to a literal loopback address; never consult DNS or proxies.
   const hostname = url.hostname === '[::1]' ? '::1' : '127.0.0.1';
   const transport = url.protocol === 'https:' ? https : http;
@@ -41,14 +48,17 @@ export async function sendRequest(method, input, { json, token, signal } = {}) {
     let settled = false;
     let req;
     const timer = setTimeout(() => {
-      finish(new Error('Refused: request exceeded five seconds.'));
-      req.destroy();
-    }, 5000);
+      finish(new Error(deadline === 5000 ? 'Refused: request exceeded five seconds.' :
+        'Refused: big upload exceeded thirty seconds.'));
+    }, deadline);
     const finish = (error, result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       signal?.removeEventListener('abort', abort);
+      source?.unpipe(req);
+      source?.destroy();
+      req?.destroy();
       if (error) reject(error);
       else resolve(result);
     };
@@ -62,11 +72,17 @@ export async function sendRequest(method, input, { json, token, signal } = {}) {
       req = transport.request({ hostname, port: url.port || undefined,
         path: url.pathname + url.search, method: method.toUpperCase(), headers,
         agent: false, ...(url.protocol === 'https:' ? { servername: url.hostname } : {}) }, res => {
+        // An app may reject a large file before reading it. Stop the upload as
+        // soon as final headers arrive, while still reading its bounded reply.
+        source?.unpipe(req);
+        source?.destroy();
         const chunks = [];
         let size = 0;
         const result = cut => {
           const display = boundedText(Buffer.concat(chunks));
-          return { status: res.statusCode, body: display.body, cut: cut || display.cut };
+          return { status: res.statusCode, body: display.body, cut: cut || display.cut,
+            headers: Object.fromEntries(['content-type', 'content-disposition', 'content-security-policy']
+              .filter(key => res.headers[key] !== undefined).map(key => [key, res.headers[key]])) };
         };
         res.on('data', chunk => {
           if (settled) return;
@@ -83,7 +99,10 @@ export async function sendRequest(method, input, { json, token, signal } = {}) {
         res.once('aborted', () => finish(new Error('Refused: response ended before completion.')));
       });
       req.once('error', error => finish(error));
-      req.end(json);
+      if (source) {
+        source.once('error', error => finish(error));
+        source.pipe(req);
+      } else req.end(json);
     } catch (error) {
       finish(error);
       req?.destroy();
@@ -91,9 +110,43 @@ export async function sendRequest(method, input, { json, token, signal } = {}) {
   });
 }
 
+// Only upload.mjs prepares file bodies. Validate its independently computed
+// length here as well, so transport can never send a body above 51 MiB.
+export function sendFileRequest(method, input, { source, length, boundary, token, big = false }) {
+  const url = validateRequest(method, input, { token });
+  if (!/^(POST|PUT)$/.test(method) || !Number.isSafeInteger(length) || length < 0 || length > 51 * 1024 * 1024) {
+    throw new Error('Refused: upload requires POST or PUT and at most 51 MiB total.');
+  }
+  if (!/^[a-zA-Z0-9-]{1,80}$/.test(boundary)) throw new Error('Refused: invalid multipart boundary.');
+  const headers = { Host: url.host, 'Content-Type': `multipart/form-data; boundary=${boundary}`,
+    'Content-Length': length };
+  if (token !== undefined) headers.Authorization = `Bearer ${token}`;
+  const bounded = Readable.from((async function* () {
+    let sent = 0;
+    try {
+      for await (const value of source) {
+        const chunk = typeof value === 'string' ? Buffer.from(value) : value;
+        if (!Buffer.isBuffer(chunk) && !(chunk instanceof Uint8Array)) {
+          throw new Error('Refused: upload stream must contain bytes.');
+        }
+        sent += chunk.length;
+        if (sent > length) throw new Error('Refused: upload stream exceeded its bounded body length.');
+        yield chunk;
+      }
+      if (sent !== length) throw new Error('Refused: upload stream ended before its bounded body length.');
+    } finally { source.destroy(); }
+  })());
+  return requestOnce(method, url, { headers, source: bounded, deadline: big === true ? 30000 : 5000 });
+}
+
 export function sendOptions(args) {
   const options = {};
   for (let i = 0; i < args.length; i += 2) {
+    if (args[i] === '--headers' && options.headers === undefined) {
+      options.headers = true;
+      i--;
+      continue;
+    }
     const key = args[i] === '--json' ? 'json' : args[i] === '--token' ? 'token' : undefined;
     if (!key || i + 1 >= args.length || options[key] !== undefined) {
       throw new Error('Refused: send accepts one --json body and one --token bearer.');

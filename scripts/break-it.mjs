@@ -1,9 +1,26 @@
 import { readFile } from 'node:fs/promises';
+import { StringDecoder } from 'node:string_decoder';
 import { checkTarget } from './lib/target.mjs';
 import { copyProject } from './lib/copy.mjs';
 import { sealRun } from './lib/seal.mjs';
 import { cleanupRun } from './lib/cleanup.mjs';
 import { redactSecrets, safeLabel } from './lib/leaks.mjs';
+
+function printResponse(response, showHeaders = false) {
+  const masked = redactSecrets(response.body, { minimumLength: 1 });
+  const bytes = Buffer.from(masked);
+  // Avoid splitting a UTF-8 code point after masking expands a short value.
+  const display = new StringDecoder('utf8').write(bytes.subarray(0, 2048));
+  console.log(`Status: ${response.status}\n${display}${response.cut || bytes.length > 2048 ? '\n(cut)' : ''}`);
+  if (showHeaders) {
+    const labels = { 'content-type': 'Content-Type', 'content-disposition': 'Content-Disposition',
+      'content-security-policy': 'Content-Security-Policy' };
+    const headerBytes = Buffer.from(Object.entries(labels).map(([key, label]) =>
+      `${label}: ${safeLabel(redactSecrets(String(response.headers?.[key] ?? '(absent)'), { minimumLength: 1 }))}`).join('\n'));
+    console.log(new StringDecoder('utf8').write(headerBytes.subarray(0, 2048)));
+    if (headerBytes.length > 2048) console.log('(headers cut; incomplete evidence)');
+  }
+}
 
 async function main(args) {
   const [command, first, ...rest] = args;
@@ -34,17 +51,23 @@ async function main(args) {
   } else if (command === 'load' && first && rest.length >= 1) {
     const { runLoad, loadOptions, formatLoad } = await import('./lib/load.mjs');
     console.log(redactSecrets(formatLoad(await runLoad(first, rest[0], loadOptions(rest.slice(1))))));
+  } else if (command === 'make' && first && rest.length >= 1) {
+    const { makeFile, makeOptions } = await import('./lib/files.mjs');
+    const file = await makeFile(first, rest[0], makeOptions(rest.slice(1)));
+    console.log(`${file.name}  ${file.bytes}  ${file.description}`);
+  } else if (command === 'upload' && first && rest.length >= 2) {
+    const { uploadRequest, uploadOptions } = await import('./lib/upload.mjs');
+    const response = await uploadRequest(first, rest[0], rest[1], uploadOptions(rest.slice(2)));
+    printResponse(response);
+    const file = response.uploaded;
+    console.log(`uploaded ${file.bytes} bytes as ${JSON.stringify(file.name)} (${file.type})`);
+    if (file.deadline === 30000) console.log('Big file: request deadline raised to 30 seconds.');
   } else if (command === 'send' && first && rest.length >= 1) {
     const { sendRequest, sendOptions } = await import('./lib/send.mjs');
-    const response = await sendRequest(first, rest[0], sendOptions(rest.slice(1)));
-    const masked = redactSecrets(response.body, { minimumLength: 1 });
-    // Masking short values can add a length label; preserve send's display cap.
-    const bytes = Buffer.from(masked);
-    const { StringDecoder } = await import('node:string_decoder');
-    const display = new StringDecoder('utf8').write(bytes.subarray(0, 2048));
-    console.log(`Status: ${response.status}\n${display}${response.cut || bytes.length > 2048 ? '\n(cut)' : ''}`);
+    const options = sendOptions(rest.slice(1));
+    printResponse(await sendRequest(first, rest[0], options), options.headers);
   } else {
-    throw new Error('Usage: node scripts/break-it.mjs check <project> [--url URL] | copy <project> [--skip] | seal <run-id> | scan <run-id> | mask | cleanup <run-id> | report <run-id> <findings.json> | send <METHOD> <URL> [--json <body>] [--token <bearer>] | load <METHOD> <URL> [--requests N] [--concurrency C] [--duration S] [--json <body>] [--token <bearer>]');
+    throw new Error('Usage: node scripts/break-it.mjs check <project> [--url URL] | copy <project> [--skip] | seal <run-id> | scan <run-id> | mask | cleanup <run-id> | report <run-id> <findings.json> | make <run-id> <kind> [--mb N] | upload <run-id> <POST|PUT> <URL> --file <made-file> [--field name] [--type content-type] [--name preset] [--token bearer] | send <METHOD> <URL> [--json <body>] [--token <bearer>] [--headers] | load <METHOD> <URL> [--requests N] [--concurrency C] [--duration S] [--json <body>] [--token <bearer>]');
   }
 }
 main(process.argv.slice(2)).catch(error => {
