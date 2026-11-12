@@ -4,7 +4,8 @@ import { mkdtemp, readFile, writeFile, cp, rm, access, readdir } from 'node:fs/p
 import os from 'node:os';
 import path from 'node:path';
 import { runDemo, startShop, stopShop, probeShop, examplePath } from '../scripts/demo-shop.mjs';
-import { sendRequest } from '../scripts/lib/send.mjs';
+import { sendRequest, sendFileRequest } from '../scripts/lib/send.mjs';
+import { Readable } from 'node:stream';
 import { uploadRequest } from '../scripts/lib/upload.mjs';
 import { makeFile } from '../scripts/lib/files.mjs';
 import { copyProject } from '../scripts/lib/copy.mjs';
@@ -35,7 +36,8 @@ test('shop answer key stays outside the app and identifies actual source lines',
     ['E01', 'const limitUploads ='],
     ['E03', 'const safeUploadNames ='],
     ['E04', 'const downloadUploads ='],
-    ['E07', 'const privateUploads =']
+    ['E07', 'const privateUploads ='],
+    ['E08', 'try { bytes = await readFile(path.join(uploadsFolder, name)); }']
   ]) {
     const line = source.split('\n').findIndex(text => text.includes(anchor)) + 1;
     assert.ok(line > 0, anchor);
@@ -52,11 +54,15 @@ test('shop end to end detects planted holes and preserves the safe route', async
   assert.deepEqual(result.rounds[0].findings.map(f => [f.id, f.severity]),
     [['C01', 'CRITICAL'], ['B01', 'CRITICAL'], ['A01', 'SMALL'], ['A09', 'SMALL'],
       ['C03', 'CRITICAL'], ['C04', 'SMALL'], ['D01', 'CRITICAL'], ['D02', 'SMALL'], ['D04', 'CRITICAL'],
-      ['E01', 'SMALL'], ['E03', 'CRITICAL'], ['E04', 'CRITICAL'], ['E07', 'CRITICAL']]);
+      ['E01', 'SMALL'], ['E03', 'CRITICAL'], ['E04', 'CRITICAL'], ['E07', 'CRITICAL'], ['E08', 'CRITICAL']]);
   assert.ok(result.rounds[0].findings.every(f => /^(?:server|config)\.mjs:\d+$/.test(f.Where)));
   assert.equal(result.rounds[0].findings.some(f => f.id === 'B02-safe'), false);
   assert.equal(result.rounds[0].attacks.blocked, 4);
-  assert.equal(result.rounds[0].attacks.tried, 17);
+  assert.equal(result.rounds[0].attacks.tried, 18);
+  const traversal = result.rounds[0].findings.find(f => f.id === 'E08');
+  assert.match(traversal.Saw, /HTTP 200/);
+  assert.match(traversal.Saw, /server\.mjs/);
+  assert.doesNotMatch(traversal.Saw, /import http/);
   assert.equal(result.rounds[0].findings.some(f => f.Where.startsWith('.env.example:')), false);
   const config = await readFile(path.join(examplePath, 'config.mjs'), 'utf8');
   const value = /API_KEY = ["']([^"']+)/.exec(config)?.[1];
@@ -64,7 +70,7 @@ test('shop end to end detects planted holes and preserves the safe route', async
   assert.equal(result.output.includes(value), false);
   assert.equal(result.output.includes('synthetic-password-hash-local-only'), false);
   assert.deepEqual(result.rounds[1].findings, []);
-  assert.equal(result.rounds[1].attacks.blocked, 17);
+  assert.equal(result.rounds[1].attacks.blocked, 18);
   for (const round of result.rounds) {
     assert.equal(round.findings.some(f => f.id === 'D-safe'), false);
     assert.equal(round.findings.some(f => f.id === 'E-safe'), false);
@@ -128,6 +134,66 @@ test('shop config uses a synthetic generic assignment and documents its placehol
   assert.match(server, /import \{ API_KEY \} from ['"]\.\/config\.mjs['"]/);
   const placeholder = await readFile(path.join(examplePath, '.env.example'), 'utf8');
   assert.match(placeholder, /API_KEY=["']?your-key-here/);
+});
+
+test('shop download path guard blocks both E08 spellings without the owner check and keeps benign dotted names', async t => {
+  for (const [label, guarded, ownerCheck] of [
+    ['round 1 read hole', false, false],
+    ['path guard alone', true, false],
+    ['round 2 path and owner guards', true, true]
+  ]) {
+    await t.test(label, async () => {
+      const scratch = await mkdtemp(path.join(os.tmpdir(), 'break-it-shop-download-'));
+      let app;
+      try {
+        await cp(examplePath, scratch, { recursive: true });
+        const file = path.join(scratch, 'server.mjs');
+        let source = await readFile(file, 'utf8');
+        assert.ok(source.includes('const privateUploads = false;'));
+        if (guarded) {
+          source = source.replace('const safeDownloadPaths = false;', 'const safeDownloadPaths = true;')
+            .replace('const safeUploadNames = false;', 'const safeUploadNames = true;');
+          if (ownerCheck) source = source.replace('const privateUploads = false;', 'const privateUploads = true;');
+          await writeFile(file, source);
+        }
+        app = await startShop(scratch);
+        const base = `http://127.0.0.1:${app.port}`;
+        const login = await sendRequest('POST', `${base}/login`, {
+          json: JSON.stringify({ user: 'A', password: 'example-a' })
+        });
+        const token = JSON.parse(login.body).session;
+        for (const name of ['..%2Fserver.mjs', '%2E%2E%2Fserver.mjs']) {
+          const read = await sendRequest('GET', `${base}/uploads/${name}`, { token });
+          if (guarded) {
+            assert.equal(read.status, 400);
+            assert.equal(JSON.parse(read.body).error, 'Invalid file name');
+            assert.doesNotMatch(read.body, /import http/);
+          } else {
+            assert.equal(read.status, 200);
+            assert.ok(read.body.length > 0 && source.startsWith(read.body), 'observed app-source bytes');
+          }
+        }
+        // A dotted basename is still inside uploads; it must not be mistaken
+        // for a parent-directory segment when the round-2 guards are enabled.
+        const boundary = 'break-it-dotted-name-control';
+        const payload = Buffer.from('synthetic image control');
+        const multipart = Buffer.concat([
+          Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="..notes.png"\r\nContent-Type: image/png\r\n\r\n`),
+          payload, Buffer.from(`\r\n--${boundary}--\r\n`)
+        ]);
+        const posted = await sendFileRequest('POST', `${base}/upload`, {
+          source: Readable.from([multipart]), length: multipart.length, boundary, token
+        });
+        assert.equal(posted.status, 201);
+        const read = await sendRequest('GET', `${base}${JSON.parse(posted.body).url}`, { token });
+        assert.equal(read.status, 200);
+        assert.equal(read.body, payload.toString());
+      } finally {
+        if (app) await stopShop(app);
+        await rm(scratch, { recursive: true, force: true });
+      }
+    });
+  }
 });
 
 test('shop retains catalog work until that route stops answering; the plain catalog survives', async () => {

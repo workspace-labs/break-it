@@ -104,7 +104,8 @@ test('upload sends exact single multipart part with raw preset names, type, fiel
     });
     assert.equal(response.status, 201);
     assert.equal(response.body, 'saved');
-    assert.deepEqual(response.uploaded, { bytes: payload.length, name: sent, type, deadline: 5000 });
+    assert.deepEqual(response.uploaded, { bytes: payload.length, sentBytes: payload.length,
+      name: sent, type, deadline: 5000 });
   }
   assert.equal(requests, 7);
 });
@@ -190,6 +191,50 @@ test('upload stops its body at early response headers while the refusal reply is
   assert.equal(response.status, 413);
   assert.equal(response.body, 'File too large');
   assert.ok(received < big.bytes, `stopped before whole file: ${received} / ${big.bytes}`);
+});
+
+test('upload CLI reports only file bytes streamed before an early reply, retaining full-upload wording', async t => {
+  const r = await run(t);
+  const big = await makeFile(r.id, 'big');
+  let fullBodyBytes = 0;
+  const url = await server(t, async (req, res) => {
+    if (req.url === '/refuse') {
+      req.resume();
+      res.writeHead(413); res.end('File too large'); return;
+    }
+    for await (const chunk of req) fullBodyBytes += chunk.length;
+    res.writeHead(201); res.end('saved');
+  });
+  const early = await cli('upload', r.id, 'POST', url + '/refuse', '--file', big.name);
+  assert.equal(early.status, 0, early.stderr);
+  assert.match(early.stdout, /^Status: 413\n/);
+  const sent = early.stdout.match(/sent (\d+) of 20971520 bytes \(stopped at the app's reply\) as "big.bin" \(application\/octet-stream\)/);
+  assert.ok(sent, early.stdout);
+  assert.ok(Number(sent[1]) >= 0 && Number(sent[1]) < big.bytes);
+  assert.ok(!early.stdout.includes('uploaded 20971520 bytes'));
+  const full = await cli('upload', r.id, 'POST', url + '/full', '--file', big.name);
+  assert.equal(full.status, 0, full.stderr);
+  assert.ok(full.stdout.includes('uploaded 20971520 bytes as "big.bin" (application/octet-stream)'));
+  assert.ok(!full.stdout.includes('stopped at'));
+  assert.ok(fullBodyBytes > big.bytes, 'multipart framing is sent but excluded from the file count');
+});
+
+test('upload metadata excludes multipart framing and tracks early replies without read-ahead bytes', async t => {
+  const r = await run(t);
+  const big = await makeFile(r.id, 'big');
+  const empty = await makeFile(r.id, 'empty');
+  const url = await server(t, (req, res) => {
+    req.resume();
+    if (req.url === '/refuse') { res.writeHead(413); res.end('too large'); }
+    else req.once('end', () => res.end('saved'));
+  });
+  const early = await uploadRequest(r.id, 'POST', url + '/refuse', { file: big.name });
+  assert.ok(Number.isSafeInteger(early.uploaded.sentBytes));
+  assert.ok(early.uploaded.sentBytes >= 0 && early.uploaded.sentBytes < big.bytes);
+  const full = await uploadRequest(r.id, 'POST', url + '/full', { file: big.name });
+  assert.equal(full.uploaded.sentBytes, big.bytes);
+  const zero = await uploadRequest(r.id, 'POST', url + '/empty', { file: empty.name });
+  assert.equal(zero.uploaded.sentBytes, 0);
 });
 
 test('shared upload transport independently enforces the 51 MiB body ceiling and actual stream length', async t => {

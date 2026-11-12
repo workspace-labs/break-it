@@ -184,6 +184,20 @@ async function probeFiles(port, folder, runId, token, otherToken, where) {
       Where: where('const privateUploads ='), Advice: 'Check the file owner before returning any private upload' });
   } else if ([otherRead, anonymousRead].every(response => [401, 403, 404].includes(response.status))) blocked++;
   else throw new Error('Inconclusive private-upload response');
+  const knownSource = await readFile(path.join(copy, 'server.mjs'), 'utf8');
+  const outsideReads = [];
+  for (const name of ['..%2Fserver.mjs', '%2E%2E%2Fserver.mjs']) {
+    outsideReads.push(await sendRequest('GET', `${base}/uploads/${name}`, { token }));
+  }
+  const hasSource = response => response.body.length > 0 && knownSource.startsWith(response.body);
+  if (outsideReads.some(response => response.status === 200 && hasSource(response))) {
+    findings.push({ id: 'E08', severity: 'CRITICAL', title: 'Reads outside the upload folder',
+      Tried: 'Requested server.mjs one level above uploads inside the copy using ..%2F and %2E%2E%2F',
+      Saw: `server.mjs: HTTP ${outsideReads.map(response => response.status).join(' and HTTP ')}`,
+      Where: where('try { bytes = await readFile(path.join(uploadsFolder, name)); }'),
+      Advice: 'Refuse download names whose resolved paths leave the upload folder before checking file ownership' });
+  } else if (outsideReads.every(response => response.status >= 400 && response.status < 500 && !hasSource(response))) blocked++;
+  else throw new Error('Inconclusive outside-upload-folder read');
   return { findings, blocked };
 }
 
@@ -273,10 +287,10 @@ export async function probeShop(port, folder, runId) {
     { id: 'E05', reason: 'Shop stores archives without unpacking them; archive bytes covered by separate tests' },
     { id: 'E06', reason: 'Empty and truncated PNG cases covered by separate upload tests' }
   ];
-  if (!runId) skipped.push(...['E01', 'E03', 'E04', 'E07', 'E-safe'].map(id => ({
+  if (!runId) skipped.push(...['E01', 'E03', 'E04', 'E07', 'E08', 'E-safe'].map(id => ({
     id, reason: 'No sealed run id provided to this standalone fixture probe' })));
   return { project: 'shop-app', findings, skipped,
-    attacks: { tried: runId ? 15 : 10, blocked, gotThrough: findings.length } };
+    attacks: { tried: runId ? 16 : 10, blocked, gotThrough: findings.length } };
 }
 
 async function round(source, number, workspace, runFolders) {
@@ -340,7 +354,7 @@ export async function runDemo() {
     let source = await readFile(file, 'utf8');
     // Builder simulation is restricted to this synthetic fixture in the harness workspace.
     for (const name of ['limited', 'validateEmpty', 'requireOwner', 'omitPrivate', 'hideDetails', 'releaseCatalogWork',
-      'limitUploads', 'safeUploadNames', 'downloadUploads', 'privateUploads']) {
+      'limitUploads', 'safeUploadNames', 'downloadUploads', 'safeDownloadPaths', 'privateUploads']) {
       source = source.replace(`const ${name} = false;`, `const ${name} = true;`);
     }
     await writeFile(file, source);

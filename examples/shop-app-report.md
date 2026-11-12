@@ -1,6 +1,6 @@
 BREAK-IT REPORT shop-app · version 0.5.0
 Seal: real project unchanged
-Attacks: 17 tried   4 blocked   13 got through
+Attacks: 18 tried   4 blocked   14 got through
 
 CRITICAL  A secret is stored in configuration
   Tried  Scanned the copy before startup and after the requests
@@ -11,13 +11,13 @@ CRITICAL  A secret is stored in configuration
 CRITICAL  Other people's orders are open
   Tried  Logged in as user A, opened /orders/6 (user B's order)
   Saw    User B's order, item and example delivery address
-  Where  server.mjs:147
+  Where  server.mjs:152
   Advice Show an order only to the user who owns it
 
 CRITICAL  Profile replies expose a password hash
   Tried  Opened /profile as synthetic user A
   Saw    The reply included a passwordHash field; its value is withheld
-  Where  server.mjs:121
+  Where  server.mjs:126
   Advice Return only the public profile fields; never return password hashes
 
 CRITICAL  Catalog refresh stops answering under load
@@ -34,26 +34,32 @@ CRITICAL  Catalog refresh does not recover after the burst
 
 CRITICAL  An upload can escape its upload folder
   Tried  Uploaded a generated PNG using the one-level traversal name preset
-  Saw    Found copy/break-it-escape-f1c40636-1cc2-40cc-b2c9-1382e3ee232b.txt inside the run, outside the app upload folder
+  Saw    Found copy/break-it-escape-efc0b5b0-616e-4f8d-8229-3d76902df43a.txt inside the run, outside the app upload folder
   Where  server.mjs:92
   Advice Reject path segments and keep every saved file inside the upload folder
 
 CRITICAL  Uploaded script markers are served inline
   Tried  Uploaded generated HTML and SVG title markers, then fetched the returned file addresses
   Saw    Served inline as text/html and image/svg+xml without attachment or sandboxing CSP
-  Where  server.mjs:108
+  Where  server.mjs:113
   Advice Serve untrusted active files as attachments or isolate them with a sandboxing policy
 
 CRITICAL  Other people's private uploads are readable
   Tried  Uploaded a generated PNG as user A; fetched its address as user B and without a login
   Saw    User B received HTTP 200; no login received HTTP 401
-  Where  server.mjs:102
+  Where  server.mjs:107
   Advice Check the file owner before returning any private upload
+
+CRITICAL  Reads outside the upload folder
+  Tried  Requested server.mjs one level above uploads inside the copy using ..%2F and %2E%2E%2F
+  Saw    server.mjs: HTTP 200 and HTTP 200
+  Where  server.mjs:110
+  Advice Refuse download names whose resolved paths leave the upload folder before checking file ownership
 
 SMALL  Empty input crashes one request
   Tried  Submitted empty text to /echo
   Saw    HTTP 500; the server remained alive
-  Where  server.mjs:137
+  Where  server.mjs:142
   Advice Reject empty text with a clear validation message before processing it
 
 SMALL  No limit on login tries
@@ -65,7 +71,7 @@ SMALL  No limit on login tries
 SMALL  Error replies expose internal details
   Tried  Opened /catalog-error as synthetic user A
   Saw    HTTP 500 included a database error and an internal source path
-  Where  server.mjs:125
+  Where  server.mjs:130
   Advice Return a plain error message without database or internal path details
 
 SMALL  Login never throttles a concurrent burst
@@ -91,7 +97,7 @@ Copy deleted. Nothing left behind. Break-it changed no code.
 
 ROUND 2 shop-app
 Seal: real project unchanged
-Attacks: 17 tried   17 blocked   0 got through
+Attacks: 18 tried   18 blocked   0 got through
 Critical holes: 0   ->   Ready for the owner's look
 
 Skipped (not counted)

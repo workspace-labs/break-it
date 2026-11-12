@@ -895,3 +895,74 @@ errors or new findings. No push, tag, release, installation or dependency change
 The existing heuristic, whitespace, block-scalar, indentation, depth and scan
 window limits remain; Windows was not tested. Single-line YAML and `.env`
 letters-only/dotted reference skips remain a documented known limit.
+
+### 0.5.0 fix round 1 — download paths and streamed upload bytes (2026-11-13)
+
+Builder: Codex. Reviewer: Claude; independent re-review remains pending.
+Started on clean `main` at `6c5f17124ba14b30eb51c82c4797b02e2f277107`.
+Version remains **0.5.0** with a fix-round line in its existing changelog entry.
+The repository backup and all logs are in
+`/private/tmp/break-it-050-fix1-evidence/`.
+
+Clean baselines passed **516/516** on Node **18.20.8**, **20.20.2** and
+**22.23.1**. The first restricted run could not open localhost sockets; the
+authorized runs enabled only the test fixtures' required loopback access.
+The first Node 18 baseline, run alongside Node 20, failed the existing
+`leak-nested.test.mjs` timing assertion (3,140 ms against its 2,000 ms limit).
+The untouched archived baseline passed all 516 when run alone (41.974 s).
+No timing limit, scanner implementation or assertion was changed.
+
+Final full suites ran sequentially with each installed runtime's `node --test`:
+
+- Node **18.20.8**: **516 → 523**, **523/523 passed**, 42.627 s.
+- Node **20.20.2**: **516 → 523**, **523/523 passed**, 42.131 s.
+- Node **22.23.1**: **516 → 523**, **523/523 passed**, 42.309 s.
+
+All final runs had zero failures, skips and cancellations. The seven added
+tests are one E08 documentation test, one shop parent with three scenario
+subtests, and two upload reporting tests. Existing expectations were extended
+for E08, shifted source anchors, the 18-try demo counts and the new streamed-byte
+metadata; no existing coverage was removed or weakened.
+
+Before implementation, both new upload regressions failed: the 413 reply still
+printed `uploaded 20971520 bytes`, and streamed-byte metadata was absent.
+The focused upload run then passed **3/3**. Documentation tests first failed
+on missing E08; docs plus unchanged walls then passed **7/7**. The new shop
+guard-only test first observed **200 instead of 400**, then the shop file passed
+**16/16**. Logs: `upload-{red,green}.tap`, `docs-{red,green}.tap`,
+`shop-guard-red.tap` and `shop-green.tap`.
+
+The shop tests see actual source bytes for both `..%2Fserver.mjs` and
+`%2E%2E%2Fserver.mjs` in round 1. They see HTTP 400 with the download path guard
+on and ownership off, and with both guards on. A benign `..notes.png` upload
+and read succeeds in every scenario. The existing normal-PNG owner read and
+cross-user refusal still pass. The upload-name switch now rejects exact `.`
+and `..` segments while allowing that benign basename; separators remain refused.
+`node scripts/demo-shop.mjs --write` regenerated the checked-in report from real
+output: **18 tried / 4 blocked / 14 holes**, then **18 / 18 / 0**. E08 evidence
+contains only the filename and HTTP statuses, never source contents.
+
+A separate disposable localhost upload probe recorded an immediate HTTP 413:
+`sent 655360 of 20971520 bytes (stopped at the app's reply)`; its completed
+20 MiB control printed `uploaded 20971520 bytes`. The full multipart body was
+20,971,729 bytes, proving its framing is excluded from the displayed file count.
+The count measures client-stream bytes submitted to the existing request pipe,
+not proof of server storage. The probe sealed the original unchanged, stopped
+its server, and removed its run, receipt and synthetic source. Reproduce with
+`upload-probe.mjs`; output is in `upload-probe.json` in the evidence directory.
+
+Builder break-tries include both E08 spellings, guard-only versus owner-guard
+scenarios, the benign dotted-name control, repeated early refusals, a delayed
+refusal body, complete and empty uploads, and all existing safety/walls tests.
+Additional encoded-backslash, double-encoded and two-parent manual probes were
+not run; those remain challenges for Claude's independent review. Windows was
+not tested. Existing lexical-path and scanner limits remain unchanged.
+
+The static skill audit retained the same **four pre-existing review notices**,
+with zero structural errors and no new finding codes. `preservation.json`
+records the byte comparison against the baseline. Every tracked file outside
+the 16 scoped files is unchanged, including the approved docs, `package.json`,
+file generator, leaks/load/copy/seal code and `tests/walls.test.mjs`. Only the
+existing shared request transport gained a streamed-chunk counter; no alternate
+transport, CLI command, cap, preset or dependency was added. Nothing was pushed,
+tagged, released or installed; installed skill mirrors were not updated.

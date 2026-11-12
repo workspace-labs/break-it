@@ -8,7 +8,7 @@ const read = file => readFile(path.join(root, file), 'utf8');
 
 test('Family E instructions cover every try and stop uploads that could write outside the copy', async () => {
   const text = await read('references/attacks-files.md');
-  for (const id of ['E01', 'E02', 'E03', 'E04', 'E05', 'E06', 'E07']) {
+  for (const id of ['E01', 'E02', 'E03', 'E04', 'E05', 'E06', 'E07', 'E08']) {
     const section = text.split(new RegExp(`## ${id}:`))[1]?.split('\n## ')[0];
     assert.ok(section, id);
     for (const label of ['Send', 'BLOCKED', 'HOLE', 'Severity']) assert.ok(section.includes(`**${label}:**`), `${id} ${label}`);
@@ -19,6 +19,27 @@ test('Family E instructions cover every try and stop uploads that could write ou
   assert.match(text, /Safe control/);
   assert.match(text, /break-it-escape-/);
   assert.match(text, /send GET[^\n]+--headers/);
+});
+
+test('E08 documents bounded copy-only download traversal and content-free findings', async () => {
+  const text = await read('references/attacks-files.md');
+  const section = text.split('## E08: Reads outside the upload folder')[1]?.split('\n## ')[0];
+  assert.ok(section, 'E08 instructions');
+  assert.match(text, /\[E08: Reads outside the upload folder\]\(#e08-reads-outside-the-upload-folder\)/);
+  for (const spelling of ['..%2F', '%2E%2E%2F']) assert.ok(section.includes(spelling), spelling);
+  assert.match(section, /send GET/);
+  assert.match(section, /one level above/i);
+  assert.match(section, /inside the copy/i);
+  assert.match(section, /STOP/);
+  assert.match(section, /Never[^.]*system files/i);
+  assert.match(section, /4xx\/404/);
+  assert.match(section, /no file content/);
+  assert.match(section, /\*\*Severity:\*\* CRITICAL/);
+  assert.match(section, /only the status and (?:the )?file name/);
+  assert.match(section, /never (?:the )?content/);
+  assert.match(await read('references/report-format.md'), /E08 \(reading outside the upload folder\)/);
+  const part2 = (await read('SKILL.md')).split('## Part 2: Attack the copy')[1].split('## Part 3:')[0];
+  assert.match(part2, /E08/);
 });
 
 test('Family E documents only generated inputs and all fixed names with capped sizes', async () => {

@@ -13,6 +13,10 @@
 - Extend the synthetic shop and its scratch repair demo with size, filename,
   inline-script and private-file access cases; regenerate its report from real
   responses. Add regression tests while retaining the existing safety walls.
+- Fix round 1: add E08 for reading a known harmless file outside the upload
+  folder but inside the copy, give the shop an independent download path guard,
+  and report actual streamed file bytes when an upload stops at the app's reply.
+  Keep version 0.5.0 and the existing bounds and safety walls.
 
 ## [0.4.4] - 2026-11-10
 

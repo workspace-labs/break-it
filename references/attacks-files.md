@@ -10,6 +10,7 @@
 - [E05: Zip bomb](#e05-zip-bomb)
 - [E06: Broken files](#e06-broken-files)
 - [E07: Someone else's upload](#e07-someone-elses-upload)
+- [E08: Reads outside the upload folder](#e08-reads-outside-the-upload-folder)
 - [Safe control](#safe-control-a-normal-image-for-its-owner)
 
 Try uploads only on the owner's own throwaway localhost copy, with invented
@@ -173,6 +174,30 @@ crash or outage; never escalate or repeat a damaging try.
   intentionally public upload is inapplicable, with its policy recorded.
 - **Severity:** CRITICAL.
 
+## E08: Reads outside the upload folder
+
+- **Send:** Apply the same upload-storage-inside-the-copy check first; **STOP
+  the family** if the actual upload folder is outside the copy or cannot be
+  established, and record the affected ids as skipped. Choose a harmless file
+  you have already seen exactly one level above that folder, still inside the copy,
+  such as the app's own source or package file. With the existing `send GET`,
+  ask the copy's download address for `..%2F<file>` and then `%2E%2E%2F<file>`.
+  For example, only after confirming `server.mjs` is that known file inside the
+  copy:
+
+  ```text
+  node scripts/break-it.mjs send GET http://localhost:4000/uploads/..%2Fserver.mjs --token LOCAL_TEST_SESSION
+  node scripts/break-it.mjs send GET http://localhost:4000/uploads/%2E%2E%2Fserver.mjs --token LOCAL_TEST_SESSION
+  ```
+
+  Never aim outside the copy or ask for system files. Do not add another parent
+  step or enumerate unknown names. `send` already masks detected secrets in its
+  bounded reply; a cut reply alone is inconclusive.
+- **BLOCKED:** A 4xx/404 response and no file content comes back.
+- **HOLE:** The known file's content comes back from outside the upload folder.
+  The finding quotes only the status and the file name, never the content.
+- **Severity:** CRITICAL.
+
 ## Safe control: A normal image for its owner
 
 - **Send:** Make and upload `normal-png` as A, then `send GET` its returned
@@ -184,7 +209,7 @@ crash or outage; never escalate or repeat a damaging try.
 - **Severity:** None for a passing control. Count it as blocked against the
   attempted failure, not as a finding.
 
-Count each completed logical try once, including controls. Use E01–E07 ids and
+Count each completed logical try once, including controls. Use E01–E08 ids and
 the existing Tried, Saw, Where and Advice fields; `Where` is a real relative
 `file:line` in the copy. Use unique descriptive suffixes when several distinct
 name or file cases become findings. Skipped or inconclusive tries do not add to

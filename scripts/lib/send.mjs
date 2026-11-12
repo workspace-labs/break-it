@@ -47,6 +47,8 @@ function requestOnce(method, url, { headers, json, source, signal, deadline = 50
   return new Promise((resolve, reject) => {
     let settled = false;
     let req;
+    let sentBytes = 0;
+    const countSent = chunk => { sentBytes += chunk.length; };
     const timer = setTimeout(() => {
       finish(new Error(deadline === 5000 ? 'Refused: request exceeded five seconds.' :
         'Refused: big upload exceeded thirty seconds.'));
@@ -57,6 +59,7 @@ function requestOnce(method, url, { headers, json, source, signal, deadline = 50
       clearTimeout(timer);
       signal?.removeEventListener('abort', abort);
       source?.unpipe(req);
+      source?.removeListener('data', countSent);
       source?.destroy();
       req?.destroy();
       if (error) reject(error);
@@ -81,6 +84,7 @@ function requestOnce(method, url, { headers, json, source, signal, deadline = 50
         const result = cut => {
           const display = boundedText(Buffer.concat(chunks));
           return { status: res.statusCode, body: display.body, cut: cut || display.cut,
+            ...(source ? { sentBytes } : {}),
             headers: Object.fromEntries(['content-type', 'content-disposition', 'content-security-policy']
               .filter(key => res.headers[key] !== undefined).map(key => [key, res.headers[key]])) };
         };
@@ -101,6 +105,8 @@ function requestOnce(method, url, { headers, json, source, signal, deadline = 50
       req.once('error', error => finish(error));
       if (source) {
         source.once('error', error => finish(error));
+        // Count only chunks consumed by this pipe, not generator read-ahead.
+        source.on('data', countSent);
         source.pipe(req);
       } else req.end(json);
     } catch (error) {

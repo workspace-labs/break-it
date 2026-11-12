@@ -135,6 +135,11 @@ the app's working folder separately. Do not install tools or dependencies.
    For E04 and E07, use `send GET` on the returned localhost address. E04 needs
    `--headers` to inspect the bounded Content-Type, Content-Disposition and
    Content-Security-Policy headers. A cut header block is incomplete evidence.
+   For E08, use `send GET` with `..%2F<file>` and `%2E%2E%2F<file>` on the
+   download address, choosing only a known harmless file exactly one level above
+   the upload folder and inside the copy. The same storage STOP rule applies;
+   never aim outside the copy or request system files. Record only the status
+   and file name in the finding, never returned file content.
    Check both owner and other-user reads and
    keep the valid-image control unflagged. After the tries, list any
    `break-it-escape-*` files inside the copy or its run folder as E03 evidence.

@@ -49,13 +49,16 @@ historical line. The relative file and positive line keep the existing location
 contract; the commit identifies the inspected version. Never paste raw history.
 
 Family E uses E01 (too big), E02 (claimed type), E03 (dangerous names), E04
-(inline script content), E05 (unbounded archive extraction), E06 (broken files)
-and E07 (another user's private upload). Keep the same Tried/Saw/Where/Advice
+(inline script content), E05 (unbounded archive extraction), E06 (broken files),
+E07 (another user's private upload) and E08 (reading outside the upload folder).
+Keep the same Tried/Saw/Where/Advice
 contract and real `file:line` in the tested copy. Describe generated kind,
 bounded size, sent-name preset and the actual storage/read outcome, including
 response-header evidence for E04 and relative traversal-marker locations for
 E03. Use a unique descriptive suffix for distinct cases, such as `E03-arabic`,
-when several findings share a family id. A safe image that works for its owner
+when several findings share a family id. For E08, use a known harmless file one
+level above the upload folder but inside the copy; quote only the status and
+file name, never the returned content. A safe image that works for its owner
 is blocked against the attempted failure, never a finding.
 If upload storage is outside the copy, record the affected E ids as skipped
 with that reason. E05 is skipped when the app does not unpack archives; skips

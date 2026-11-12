@@ -10,7 +10,8 @@ details, and logs that keep private data. Family D helps you see if your app
 survives many users at once, safely, on a throwaway copy. Family E checks bad
 file uploads: files that are too large, pretend to be images, have awkward
 names, contain a harmless script marker, expand when unpacked, are broken, or
-can be read by the wrong user. Break-it makes every test file itself, within
+can be read by the wrong user, plus reading outside the upload folder through
+the download address. Break-it makes every test file itself, within
 fixed size limits. It reports what
 happened, where, and what to fix.
 The builder fixes the holes; Break-it never fixes them.
@@ -158,7 +159,8 @@ is served without exposing other response headers. This optional block has its
 own 2 KiB cap; `(headers cut; incomplete evidence)` means the headers cannot
 establish the result of a try.
 
-[Family E: bad files](references/attacks-files.md) adds `make` and `upload`.
+[Family E: bad files](references/attacks-files.md) adds `make` and `upload`, plus
+E08 for reading outside the upload folder with the existing `send GET`.
 Before these tries, find the copy's actual upload folder, including any archive
 extraction folder. If it points outside the copy, to a cloud bucket or to shared
 storage, stop this family and record why it was skipped. Break-it cannot sandbox
@@ -186,7 +188,11 @@ The whole upload body, including framing, cannot exceed 51 MiB. It retains
 send's literal-loopback connection, no redirects or retries, masked 2 KiB reply
 and a 5-second deadline; only `big` gets a stated 30-second deadline. Use
 `send GET` for the returned local address to check script-serving headers and
-whether B can read A's private file. A valid PNG that its owner uploads and
+whether B can read A's private file. E08 tries both `..%2F<file>` and
+`%2E%2E%2F<file>` against the download address, only for a known harmless file
+exactly one level above uploads and inside the copy. Never target system files
+or anything outside the copy; report only the status and file name, not content.
+A valid PNG that its owner uploads and
 reads normally is a safe control. After the tries, record any
 `break-it-escape-*` files inside the copy or run folder as traversal evidence.
 Cleanup deletes all made files with the run; there is no separate cleanup step.

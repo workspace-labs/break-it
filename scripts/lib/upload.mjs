@@ -66,9 +66,11 @@ export async function uploadRequest(id, method, input, options = {}) {
       if (bytes !== made.bytes) throw new Error('Refused: generated file changed during upload.');
       yield suffix;
     })());
-    const response = await sendFileRequest(method, input, { source, length, boundary,
+    const { sentBytes, ...response } = await sendFileRequest(method, input, { source, length, boundary,
       token: options.token, big: made.kind === 'big' });
-    return { ...response, uploaded: { bytes: made.bytes, name, type, deadline: made.kind === 'big' ? 30000 : 5000 } };
+    const fileBytesSent = Math.min(made.bytes, Math.max(0, sentBytes - prefix.length));
+    return { ...response, uploaded: { bytes: made.bytes, sentBytes: fileBytesSent, name, type,
+      deadline: made.kind === 'big' ? 30000 : 5000 } };
   } finally {
     source?.destroy();
     fileStream?.destroy();

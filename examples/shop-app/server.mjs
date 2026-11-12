@@ -90,7 +90,7 @@ const server = http.createServer(async (req, res) => {
       const part = await uploadedPart(req, res, limitUploads);
       if (!part) return;
       const safeUploadNames = false;
-      if (safeUploadNames && (!/^[a-zA-Z0-9._-]{1,100}$/.test(part.name) || part.name.includes('..'))) {
+      if (safeUploadNames && (!/^[a-zA-Z0-9._-]{1,100}$/.test(part.name) || ['.', '..'].includes(part.name))) {
         return send(res, 400, { error: 'Invalid file name' });
       }
       await writeFile(path.join(uploadsFolder, part.name), part.bytes);
@@ -99,6 +99,11 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname.startsWith('/uploads/')) {
       const name = decodeURIComponent(url.pathname.slice('/uploads/'.length));
+      const safeDownloadPaths = false;
+      const relative = path.relative(uploadsFolder, path.resolve(uploadsFolder, name));
+      if (safeDownloadPaths && (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative))) {
+        return send(res, 400, { error: 'Invalid file name' });
+      }
       const privateUploads = false;
       if (privateUploads && uploadOwners.get(name) !== user) return send(res, 403, { error: 'Not your file' });
       let bytes;

@@ -60,7 +60,9 @@ async function main(args) {
     const response = await uploadRequest(first, rest[0], rest[1], uploadOptions(rest.slice(2)));
     printResponse(response);
     const file = response.uploaded;
-    console.log(`uploaded ${file.bytes} bytes as ${JSON.stringify(file.name)} (${file.type})`);
+    const progress = file.sentBytes === file.bytes ? `uploaded ${file.bytes} bytes` :
+      `sent ${file.sentBytes} of ${file.bytes} bytes (stopped at the app's reply)`;
+    console.log(`${progress} as ${JSON.stringify(file.name)} (${file.type})`);
     if (file.deadline === 30000) console.log('Big file: request deadline raised to 30 seconds.');
   } else if (command === 'send' && first && rest.length >= 1) {
     const { sendRequest, sendOptions } = await import('./lib/send.mjs');
