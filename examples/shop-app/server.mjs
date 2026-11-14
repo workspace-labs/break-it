@@ -13,6 +13,14 @@ const orders = {
 };
 const attempts = new Map();
 const sessions = new Map();
+const invalidateLogout = false;
+const unpredictableSessions = false;
+const expireSessions = false;
+const invalidateOtherSessions = false;
+const protectedCookie = false;
+const uniformLoginErrors = false;
+const sessionLifetime = 1800;
+let sessionSequence = 1000000000000000n;
 const notes = [];
 const catalogJobs = [];
 let catalogAvailable = true;
@@ -123,14 +131,49 @@ const server = http.createServer({
       if (limited && count >= 5) return send(res, 429, { error: 'Try later' });
       if (!users[data.user] || data.password !== users[data.user]) {
         attempts.set(data.user, count + 1);
-        return send(res, 401, { error: 'Wrong login' });
+        return send(res, 401, { error: uniformLoginErrors ? 'Wrong login'
+          : !users[data.user] ? 'No such user' : 'Wrong password' });
       }
-      const token = randomUUID();
-      sessions.set(token, data.user);
+      sessionSequence += 10n;
+      const token = unpredictableSessions ? randomUUID() : String(sessionSequence);
+      sessions.set(token, { user: data.user, expires: expireSessions ? Date.now() + sessionLifetime * 1000 : null });
+      res.setHeader('Set-Cookie', `shop_session=${token}; Path=/` +
+        (protectedCookie ? '; HttpOnly; SameSite=Lax' : '') +
+        (expireSessions ? `; Max-Age=${sessionLifetime}` : ''));
       return send(res, 200, { session: token });
     }
-    const user = sessions.get(req.headers.authorization?.replace('Bearer ', ''));
+    const bearer = req.headers.authorization?.replace('Bearer ', '');
+    const cookie = req.headers.cookie?.split(';').map(part => part.trim())
+      .find(part => part.startsWith('shop_session='))?.slice('shop_session='.length);
+    const activeSession = value => {
+      const session = sessions.get(value);
+      if (session?.expires !== null && session?.expires <= Date.now()) {
+        sessions.delete(value);
+        return undefined;
+      }
+      return session;
+    };
+    const token = activeSession(bearer) ? bearer : cookie;
+    const user = activeSession(token)?.user;
     if (!user) return send(res, 401, { error: 'Log in first' });
+    if (req.method === 'POST' && url.pathname === '/logout') {
+      if (invalidateLogout) sessions.delete(token);
+      return send(res, 200, { loggedOut: true });
+    }
+    if (req.method === 'POST' && url.pathname === '/password') {
+      const data = await body(req);
+      if (data.current !== users[user]) return send(res, 403, { error: 'Current password required' });
+      if (typeof data.password !== 'string' || !data.password.trim()) {
+        return send(res, 400, { error: 'New password required' });
+      }
+      users[user] = data.password;
+      if (invalidateOtherSessions) {
+        for (const [value, session] of sessions) {
+          if (value !== token && session.user === user) sessions.delete(value);
+        }
+      }
+      return send(res, 200, { changed: true });
+    }
     if (req.method === 'POST' && url.pathname === '/upload') {
       const limitUploads = false;
       const keepCompleteUploads = false;

@@ -78,6 +78,23 @@ cause clear using the same real source location when appropriate, as with
 D01/D04. The normal before/after `send` safe control is never a finding when it
 works. Stop on an observed outage; never repeat it just to fill a report.
 
+Family G uses G01 (logout reuse), G02 (forged login), G03 (guessable values),
+G04 (no lifetime), G05 (old session after password change), G06 (unsafe cookie
+or query-string login), and G07 (user-revealing login errors). Keep the same
+relative file:line and Tried/Saw/Where/Advice contract. Unknown lifetimes and
+cut headers are inconclusive; skip missing routes with a reason. Secure needs
+production-code evidence, never a localhost HTTP inference; timing is outside G07.
+The before/after correct-login control is blocked when it works.
+
+Login values have a stricter rule than general secrets: no characters at all,
+only name, length, flags and patterns. Never save a bearer, cookie or sampled
+value in findings, including skipped text or project labels. The guard refuses
+known in-memory values and values matching the run's salted fingerprints from
+jar use or sessions samples, retained in the cleanup receipt without raw samples.
+It refuses the report without printing that value or consuming the receipt.
+Never work around this by encoding a value. No pattern found is not proof of
+randomness, and rough strength is an upper bound, not an entropy measurement.
+
 Every finding needs a nonempty id, title, **Tried**, **Saw**, **Where**, **Advice**
 and a severity of **CRITICAL** or **SMALL**. Report rejects missing evidence rather
 than filling it in. State the observed effect and test boundary without private
@@ -102,7 +119,7 @@ not emit secret-bearing evidence or consume its cleanup receipt.
 ## Output shape
 
 ```text
-BREAK-IT REPORT shop-app · version 0.6.0
+BREAK-IT REPORT shop-app · version 0.7.0
 Seal: real project unchanged
 Attacks: 2 tried   1 blocked   1 got through
 

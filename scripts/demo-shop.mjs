@@ -5,6 +5,7 @@ import { runLoad } from './lib/load.mjs';
 import { runNet } from './lib/network.mjs';
 import { makeFile } from './lib/files.mjs';
 import { uploadRequest } from './lib/upload.mjs';
+import { runSessions, formatSessions } from './lib/sessions.mjs';
 import { runPath } from './lib/runs.mjs';
 import { mkdtemp, readFile, writeFile, cp, rm, realpath, readdir } from 'node:fs/promises';
 import os from 'node:os';
@@ -271,6 +272,102 @@ async function probeNetwork(port, folder, runId, token, where, source) {
   return { findings, blocked, observations };
 }
 
+export async function probeLogin(port, runId, where, source) {
+  const base = `http://127.0.0.1:${port}`;
+  const findings = [], observations = [];
+  let blocked = 0;
+  const login = async (password = 'example-a', jar) => {
+    const response = await sendRequest('POST', `${base}/login`, {
+      json: JSON.stringify({ user: 'A', password }), ...(jar ? { jar } : {})
+    });
+    if (response.status !== 200 || response.cut) throw new Error('Family G correct-login control failed; stop at any lockout');
+    const token = JSON.parse(response.body).session;
+    if (typeof token !== 'string' || !token) throw new Error('Family G login returned no session');
+    return { response, token };
+  };
+  const read = options => sendRequest('GET', `${base}/safe-orders/1`, options);
+  const initial = await login('example-a', runId);
+  if ((await read({ token: initial.token })).status !== 200 || (await read({ jar: runId })).status !== 200) {
+    throw new Error('Family G bearer and cookie controls failed before the family');
+  }
+  const samples = await runSessions(runId, 'POST', `${base}/login`, {
+    json: JSON.stringify({ user: 'A', password: 'example-a' }), field: 'session', count: 10
+  });
+  if (samples.status !== undefined) throw new Error('Family G sampling stopped; stop at any lockout');
+  const patterned = samples.patterns.some(pattern => ['repeats', 'counts up', 'contains the time', 'contains the user name'].includes(pattern));
+  if (patterned || samples.roughStrengthBits < 64) findings.push({ id: 'G03', severity: patterned ? 'CRITICAL' : 'SMALL',
+    title: 'Login values have a predictable shape',
+    Tried: 'Logged in ten times sequentially as synthetic user A; A09 uses separate user B and budgets are tracked per user',
+    Saw: formatSessions(samples).replace(/\n/g, '; '), Where: where('const unpredictableSessions ='),
+    Advice: 'Issue unpredictable session values; no pattern found in a small sample would not prove randomness' });
+  else blocked++;
+  observations.push({ id: 'G03', samples });
+  const logout = await login();
+  if ((await sendRequest('POST', `${base}/logout`, { token: logout.token })).status !== 200) {
+    throw new Error('Family G logout control failed');
+  }
+  const reused = await read({ token: logout.token });
+  if (reused.status === 200) findings.push({ id: 'G01', severity: 'CRITICAL', title: 'Logout leaves the old login working',
+    Tried: 'Logged in, called POST /logout, then reused that same session on the own-order route',
+    Saw: 'The old session still answered HTTP 200 after logout', Where: where('const invalidateLogout ='),
+    Advice: 'Invalidate the server session when logging out' });
+  else if (reused.status === 401) blocked++;
+  else throw new Error('Inconclusive logout reuse response');
+  observations.push({ id: 'G01', status: reused.status });
+  for (const forge of ['made-up', 'one-char']) {
+    const forged = await read({ token: initial.token, forge });
+    if (forged.status !== 401) throw new Error('Family G forged-session safe control failed');
+  }
+  blocked++;
+  observations.push({ id: 'G02', blocked: true, kinds: ['made-up', 'one-char'], skipped: 'JWT kinds: the shop does not issue JWTs' });
+  const cookie = initial.response.headers['set-cookie'].find(value => value.startsWith('shop_session='));
+  if (!cookie) throw new Error('Family G cookie control absent');
+  if (!/;\s*(?:Max-Age|Expires)=/i.test(cookie) && source.includes('const expireSessions = false;')) {
+    findings.push({ id: 'G04', severity: 'SMALL', title: 'Login sessions have no enforced lifetime',
+      Tried: 'Read the copy session lifetime code and the login cookie attributes without waiting',
+      Saw: 'Session expiration is disabled; stored sessions have no expiry and the cookie has no Max-Age or Expires',
+      Where: where('const expireSessions ='), Advice: 'Enforce a bounded server lifetime and give the session cookie a matching lifetime' });
+  } else if (/;\s*Max-Age=1800(?:;|$)/.test(cookie) && source.includes('const expireSessions = true;')) blocked++;
+  else throw new Error('Inconclusive session lifetime configuration');
+  if (!/;\s*HttpOnly(?:;|$)/i.test(cookie) || !/;\s*SameSite=/i.test(cookie)) {
+    findings.push({ id: 'G06', severity: 'SMALL', title: 'The login cookie lacks protective flags',
+      Tried: 'Read only the session cookie attribute names from the login reply',
+      Saw: 'The session cookie lacks HttpOnly and SameSite; Secure needs production configuration review, not a localhost HTTP verdict',
+      Where: where('const protectedCookie ='), Advice: 'Add HttpOnly and SameSite, and judge Secure from the production HTTPS settings' });
+  } else blocked++;
+  const wrong = await sendRequest('POST', `${base}/login`, {
+    json: JSON.stringify({ user: 'A', password: 'wrong-local-password' }) });
+  const absent = await sendRequest('POST', `${base}/login`, {
+    json: JSON.stringify({ user: 'absent-local-user', password: 'wrong-local-password' }) });
+  if (wrong.status === 429 || absent.status === 429) throw new Error('Family G login locked out; stop');
+  if (wrong.status !== 401 || absent.status !== 401) throw new Error('Family G wrong-login controls failed');
+  if (wrong.body !== absent.body) findings.push({ id: 'G07', severity: 'SMALL', title: 'Login errors reveal which users exist',
+    Tried: 'Compared one wrong password for synthetic user A with one made-up user name',
+    Saw: 'Both replies were HTTP 401, but one said Wrong password and the other No such user',
+    Where: where('const uniformLoginErrors ='), Advice: 'Return the same status and plain message for both failed logins' });
+  else blocked++;
+  const first = await login(), other = await login();
+  const changed = await sendRequest('POST', `${base}/password`, { token: first.token,
+    json: JSON.stringify({ current: 'example-a', password: 'example-a-new' }) });
+  if (changed.status !== 200) throw new Error('Family G own-password-change control failed');
+  const oldLogin = await read({ token: other.token });
+  if (oldLogin.status === 200) findings.push({ id: 'G05', severity: 'SMALL', title: 'Changing the password leaves another login working',
+    Tried: 'Logged in twice, changed the own password with one session, then tested the other session',
+    Saw: 'The other session still answered HTTP 200 after the password change',
+    Where: where('const invalidateOtherSessions ='), Advice: 'End the user other sessions when the password changes' });
+  else if (oldLogin.status === 401) blocked++;
+  else throw new Error('Inconclusive other-session response after password change');
+  const after = await login('example-a-new', runId);
+  if ((await read({ token: after.token })).status !== 200 || (await read({ jar: runId })).status !== 200) {
+    throw new Error('Family G correct-login/session controls failed after the family');
+  }
+  blocked++;
+  observations.push({ id: 'G-safe', before: 200, after: 200 });
+  const order = ['G01', 'G02', 'G03', 'G04', 'G05', 'G06', 'G07'];
+  findings.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  return { findings, blocked, observations };
+}
+
 export async function probeShop(port, folder, runId) {
   const source = await readFile(path.join(folder, 'server.mjs'), 'utf8');
   const where = anchor => {
@@ -359,16 +456,26 @@ export async function probeShop(port, folder, runId) {
     blocked += results.blocked;
     network = results.observations;
   }
+  let loginObservations = [];
+  if (runId) {
+    const results = await probeLogin(port, runId, where, source);
+    findings.push(...results.findings);
+    blocked += results.blocked;
+    loginObservations = results.observations;
+  }
   const skipped = [
     { id: 'E02', reason: 'Claimed-type case covered by separate upload tests' },
     { id: 'E05', reason: 'Shop stores archives without unpacking them; archive bytes covered by separate tests' },
     { id: 'E06', reason: 'Empty and truncated PNG cases covered by separate upload tests' }
   ];
+  if (runId) skipped.push(...['G02-jwt-none', 'G02-jwt-bad-sig'].map(id => ({
+    id, reason: 'The shop does not issue JWTs; unsigned and bad-signature JWT behavior is covered by local fixture tests' })));
   if (!runId) skipped.push(...['E01', 'E03', 'E04', 'E07', 'E08', 'E-safe', 'F01', 'F02', 'F03', 'F04',
+    'G01', 'G02', 'G03', 'G04', 'G05', 'G06', 'G07', 'G-safe',
     'F05-garbage', 'F05-bad-header', 'F05-huge-header', 'F05-two-lengths'].map(id => ({
     id, reason: 'No sealed run id provided to this standalone fixture probe' })));
-  return { project: 'shop-app', findings, skipped, network,
-    attacks: { tried: runId ? 24 : 10, blocked, gotThrough: findings.length } };
+  return { project: 'shop-app', findings, skipped, network, login: loginObservations,
+    attacks: { tried: runId ? 32 : 10, blocked, gotThrough: findings.length } };
 }
 
 async function round(source, number, workspace, runFolders) {
@@ -433,7 +540,8 @@ export async function runDemo() {
     // Builder simulation is restricted to this synthetic fixture in the harness workspace.
     for (const name of ['limited', 'validateEmpty', 'requireOwner', 'omitPrivate', 'hideDetails', 'releaseCatalogWork',
       'limitUploads', 'safeUploadNames', 'downloadUploads', 'safeDownloadPaths', 'privateUploads',
-      'keepCompleteUploads', 'boundedConnections']) {
+      'keepCompleteUploads', 'boundedConnections', 'invalidateLogout', 'unpredictableSessions', 'expireSessions',
+      'invalidateOtherSessions', 'protectedCookie', 'uniformLoginErrors']) {
       source = source.replace(`const ${name} = false;`, `const ${name} = true;`);
     }
     await writeFile(file, source);

@@ -1,4 +1,4 @@
-# Break-it · 0.6.0
+# Break-it · 0.7.0
 
 ![break-it: find the hole a hacker would find, first](media/break-it-hero.png)
 
@@ -17,6 +17,11 @@ only half a request, send it slowly, leave early, promise more than they send,
 or send a broken request. It checks whether the app still answers other users
 and whether anything was half-saved. Each try is one fixed, bounded local
 connection. It reports what happened, where, and what to fix.
+Family G checks login and sessions: whether logout really ends a login, fake
+login keys are refused, keys follow a guessable pattern, logins have a lifetime,
+a password change ends other logins, cookies have protective settings, and login
+errors reveal which users exist. Only made-up local users are used; login values
+stay hidden. Cookie jars are kept inside the disposable run and removed with it.
 The builder fixes the holes; Break-it never fixes them.
 
 For Claude Code, Codex and other agents that read Agent Skills. Requires Node
@@ -43,7 +48,7 @@ node scripts/demo-shop.mjs
 ```
 
 This starts only temporary copies on a free loopback port. It tests bad-input,
-access-control, leak, bounded-load, upload and bad-connection cases with safe
+access-control, leak, bounded-load, upload, bad-connection and login cases with safe
 controls, simulates builder fixes in synthetic scratch source,
 then tests a fresh copy again. Nothing in your real project is changed.
 

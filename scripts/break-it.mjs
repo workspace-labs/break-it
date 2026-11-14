@@ -5,9 +5,11 @@ import { copyProject } from './lib/copy.mjs';
 import { sealRun } from './lib/seal.mjs';
 import { cleanupRun } from './lib/cleanup.mjs';
 import { redactSecrets, safeLabel } from './lib/leaks.mjs';
+import { maskLoginValues } from './lib/login-values.mjs';
+import { formatSetCookie } from './lib/send.mjs';
 
 function printResponse(response, showHeaders = false) {
-  const masked = redactSecrets(response.body, { minimumLength: 1 });
+  const masked = redactSecrets(maskLoginValues(response.body, { cut: response.cut }), { minimumLength: 1 });
   const bytes = Buffer.from(masked);
   // Avoid splitting a UTF-8 code point after masking expands a short value.
   const display = new StringDecoder('utf8').write(bytes.subarray(0, 2048));
@@ -15,11 +17,14 @@ function printResponse(response, showHeaders = false) {
   if (showHeaders) {
     const labels = { 'content-type': 'Content-Type', 'content-disposition': 'Content-Disposition',
       'content-security-policy': 'Content-Security-Policy' };
-    const headerBytes = Buffer.from(Object.entries(labels).map(([key, label]) =>
-      `${label}: ${safeLabel(redactSecrets(String(response.headers?.[key] ?? '(absent)'), { minimumLength: 1 }))}`).join('\n'));
+    const cookies = response.headers?.['set-cookie'] ?? [];
+    const headerBytes = Buffer.from([...Object.entries(labels).map(([key, label]) =>
+      `${label}: ${safeLabel(redactSecrets(maskLoginValues(String(response.headers?.[key] ?? '(absent)')), { minimumLength: 1 }))}`),
+      ...cookies.map(formatSetCookie)].join('\n'));
     console.log(new StringDecoder('utf8').write(headerBytes.subarray(0, 2048)));
     if (headerBytes.length > 2048) console.log('(headers cut; incomplete evidence)');
   }
+  if (response.forged) console.log(`sent a forged login value (${response.forged})`);
 }
 
 async function main(args) {
@@ -47,7 +52,11 @@ async function main(args) {
     }
   } else if (command === 'report' && first && rest.length === 1) {
     const { reportRun } = await import('./lib/report.mjs');
-    console.log(await reportRun(first, JSON.parse(await readFile(rest[0], 'utf8'))));
+    const contents = await readFile(rest[0], 'utf8');
+    let findings;
+    try { findings = JSON.parse(contents); }
+    catch { throw new Error('Refused: findings file must contain valid JSON; contents hidden.'); }
+    console.log(await reportRun(first, findings));
   } else if (command === 'net' && first && rest.length >= 3) {
     const { runNet, netOptions, formatNet } = await import('./lib/network.mjs');
     const result = await runNet(first, rest[0], rest[1], rest[2], netOptions(rest.slice(3)));
@@ -69,18 +78,21 @@ async function main(args) {
       `sent ${file.sentBytes} of ${file.bytes} bytes (stopped at the app's reply)`;
     console.log(`${progress} as ${JSON.stringify(file.name)} (${file.type})`);
     if (file.deadline === 30000) console.log('Big file: request deadline raised to 30 seconds.');
+  } else if (command === 'sessions' && first && rest.length >= 2) {
+    const { runSessions, sessionsOptions, formatSessions } = await import('./lib/sessions.mjs');
+    console.log(formatSessions(await runSessions(first, rest[0], rest[1], sessionsOptions(rest.slice(2)))));
   } else if (command === 'send' && first && rest.length >= 1) {
     const { sendRequest, sendOptions } = await import('./lib/send.mjs');
     const options = sendOptions(rest.slice(1));
     printResponse(await sendRequest(first, rest[0], options), options.headers);
   } else {
-    throw new Error('Usage: node scripts/break-it.mjs check <project> [--url URL] | copy <project> [--skip] | seal <run-id> | scan <run-id> | mask | cleanup <run-id> | report <run-id> <findings.json> | make <run-id> <kind> [--mb N] | upload <run-id> <POST|PUT> <URL> --file <made-file> [--field name] [--type content-type] [--name preset] [--token bearer] | send <METHOD> <URL> [--json <body>] [--token <bearer>] [--headers] | net <run-id> <kind> <METHOD> <URL> --probe <URL> [--json <body> | --file <made-file>] [--token <bearer>] [--seconds N] | load <METHOD> <URL> [--requests N] [--concurrency C] [--duration S] [--json <body>] [--token <bearer>]');
+    throw new Error('Usage: node scripts/break-it.mjs check <project> [--url URL] | copy <project> [--skip] | seal <run-id> | scan <run-id> | mask | cleanup <run-id> | report <run-id> <findings.json> | make <run-id> <kind> [--mb N] | upload <run-id> <POST|PUT> <URL> --file <made-file> [--field name] [--type content-type] [--name preset] [--token bearer] | send <METHOD> <URL> [--json <body>] [--token <bearer>] [--jar <run-id>] [--headers] [--forge <kind>] | sessions <run-id> POST <URL> --json <body> (--field <key> | --cookie-name <name>) [--count N] | net <run-id> <kind> <METHOD> <URL> --probe <URL> [--json <body> | --file <made-file>] [--token <bearer>] [--seconds N] | load <METHOD> <URL> [--requests N] [--concurrency C] [--duration S] [--json <body>] [--token <bearer>]');
   }
 }
 main(process.argv.slice(2)).catch(error => {
   const message = error.message.startsWith('Refused:') || error.exitCode === 3 ? error.message : `Refused: ${error.message}`;
   // Seal alarms have intentional line breaks and already sanitize dynamic labels.
   // Other failures can contain raw filesystem paths or parser input excerpts.
-  console.error(error.exitCode === 3 ? redactSecrets(message) : safeLabel(message));
+  console.error(error.exitCode === 3 ? redactSecrets(maskLoginValues(message)) : safeLabel(maskLoginValues(message)));
   process.exitCode = error.exitCode || 1;
 });

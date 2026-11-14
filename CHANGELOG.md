@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0] - 2026-11-14
+
+- Add Family G login/session checks G01–G07 on the owner's throwaway localhost
+  copy only, with made-up users, shape-only evidence and safe controls.
+- Add guarded per-run cookie jars, always-masked Set-Cookie headers and four
+  single-request login forgeries without changing JWT payloads.
+- Add up to 20 sequential login samples with bounded pattern/shape analysis;
+  retain only salted fingerprints for post-cleanup report leak rejection.
+- Fully mask JSON login fields and known login values in CLI display. Preserve
+  existing network ownership, localhost pinning, caps and A–F behavior.
+- Extend the synthetic shop and two-round demo with six login/session problems
+  and a forged-value refusal control; leave approved documents untouched.
+
 ## [0.6.0] - 2026-11-14
 
 - Fix round 1: distinguish a during-probe stopped by the try ending from a real

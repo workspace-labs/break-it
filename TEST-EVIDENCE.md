@@ -998,3 +998,81 @@ sockets/lifecycle, paths). Existing scanner/isolation limits remain. These are b
 - Final sequential full suites: Node **18.20.8: 557/557, 60.426 s**; **20.20.2: 557/557, 59.621 s**; **22.23.1: 557/557, 60.252 s**. Zero failures/skips/cancellations; all 547 earlier tests plus ten additions.
 - Real regenerated demo: **3.859 s**, **26/9/17 → 26/26/0**. Round 1 keeps/serves **51,154 of 102,400** PNG bytes; round 2 retains the complete file. Existing A–E results and source anchors hold.
 - Approved docs, socket/upload/load code, walls tests, package and shop server are byte-identical. Skill audits retain the same four notices, zero structural errors. Evidence: `/private/tmp/break-it-060-fix1-evidence/`. **Windows not run**; no push/tag/release/install.
+
+
+## 0.7.0 — Family G, login and sessions (2026-11-14)
+
+Codex builder; delivered for Claude's independent review. Started on clean
+`main` at `d5eb5d77faa28e2e35401a17935fe4838802a99c`. Owner's approved Family G
+prompt items 1–5 and L1–L12 govern this change. Local commits only; no push,
+tag, release, dependency installation or installed-skill change.
+
+Baseline: **557/557** on Node **18.20.8** (60.462 s), **20.20.2** (59.823 s),
+and **22.14.0** (60.040 s). Node 22 ran in the clean checkout before edits;
+18/20 ran from its exact archived commit. The first restricted-shell baseline
+could not bind localhost (`EPERM`); the authorized loopback rerun passed. No
+assertion or timeout was relaxed for that environment.
+
+Final complete suites ran sequentially on macOS using each installed runtime's
+absolute `node --test` command; zero failures, skips or cancellations:
+
+- Node **18.20.8**: **597/597**, **61.761 s**.
+- Node **20.20.2**: **597/597**, **60.588 s**.
+- Node **22.23.1**: **597/597**, **61.737 s**.
+
+All **557 original tests** remain, plus **40 additions**: 12 cookie/forge tests,
+11 sampling tests, five login-value/report tests, eight privacy/path edge tests,
+and four shop session tests. Existing expectations change only for the release
+banner, added command allowlist, new demo cases/counts and moved source anchors.
+No test was removed or disabled. RED preceded the new modules. Audit probes
+then exposed numeric/escaped JSON fields, an escaped echo preceding its login
+field, and a report diagnostic that could quote a sampled id before its guard.
+Retained regressions cover those corrections. A UUID/name regression caught
+case-folding of synthetic user A; username matching now uses exact characters.
+
+The transport remains solely in send.mjs. New cookie, forge, session-analysis
+and private-value helpers use Node's standard library only. Tests exercise exact
+host/port isolation, foreign Domain refusal, 20-cookie/4 KiB limits, cleanup,
+link traps, fully masked Set-Cookie flags/cuts, one-request forgeries, unchanged
+jar bytes, actual JWT signature verification versus permissive localhost
+controls, strict/sequential sampling, failure stop, patterns and no-value output.
+Fresh CLI processes reject findings containing either a jar value or a sampled
+value after cleanup, including a sample accidentally used as a diagnostic id.
+
+Raw sampled values remain in memory only. To enforce the guard across CLI
+processes and cleanup, guarded run metadata stores salted fingerprints and
+lengths (not raw samples); cleanup transfers those to its existing receipt,
+which successful report deletes. The optional cookie jar is the sole intentional
+raw cookie store, inside the run. Report parsing errors hide file contents.
+JSON login fields and known original/forged values are fully masked, including
+numeric, escaped and cut echoes. Unknown arbitrary response fields still need
+reviewer judgment; custom login fields can be sampled with sessions --field.
+
+Real `node scripts/demo-shop.mjs --write`: **4.44 s**, **34 tried / 11 blocked /
+23 findings → 34 / 34 / 0**. Original A–F outcomes remain; G01/G03/G04/G05/G06/G07
+add six findings. G02 and before/after correct-login controls stay blocked.
+A09 uses B and G03 uses A, with combined per-user budgets and lockout stops;
+JWT kinds are explicitly skipped for this non-JWT shop and covered by tests.
+Secure is judged from production settings, not localhost HTTP; this teaching
+copy has no production deployment, so that part is inconclusive.
+
+A separate helper followed the documented G workflow on a fresh copy:
+**8 tries / 2 blocked / 6 findings**, exactly the six planted G issues. Correct
+bearer/cookie controls passed; G02 forgeries were refused; seal passed; the
+owned run and receipt were absent after reporting. These are builder-team
+verification results, not Claude's independent acceptance.
+
+All **six tracked docs/ files** are byte-identical to the baseline (hashes in
+preservation.json). Static baseline/candidate skill audits under folder name
+break-it: zero structural errors, the same four existing notices (large hero
+asset skipped, two model-specific tool mentions, one historical personal path).
+Quick validation needs unavailable PyYAML; no dependency was installed.
+
+Evidence and baseline archive: `/private/tmp/break-it-070-evidence/`.
+The final suites are verified-node18.log, verified-node20.log and
+verified-node22.log; the directory also contains baseline, RED/focused, demo,
+privacy, G-smoke, audit and preservation artifacts plus the implementation plan.
+**Windows was not run**: full suite, CLI paths/link behavior, cookies, localhost
+socket lifecycle and cleanup/report workflow remain untested there. Sampling
+is bounded heuristic evidence, not proof of randomness. Existing local-copy
+isolation and same-user filesystem-race limits remain. Claude review is next.

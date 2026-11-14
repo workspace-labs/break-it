@@ -12,6 +12,7 @@
 - [W8: Bounded load only](#w8-bounded-load-only)
 - [W9: Generated files only](#w9-generated-files-only)
 - [W10: Bounded bad connections](#w10-bounded-bad-connections)
+- [W11: Login values stay hidden](#w11-login-values-stay-hidden)
 
 These walls apply to every run, including a retest. The CLI handles file checks,
 copying, fingerprints, deletion, and report rendering. The reviewer remains
@@ -104,7 +105,8 @@ script imports a network module. `net` has no DNS, proxy, TLS, redirect or retry
 path; its same-port GET probes use the existing `send` transport. All other
 network-module restrictions stay unchanged; W10 gives the connection bounds.
 The optional `send --headers` display shows only bounded Content-Type,
-Content-Disposition and Content-Security-Policy values needed for upload reads.
+Content-Disposition and Content-Security-Policy values needed for upload reads,
+and every Set-Cookie with its value fully masked and flags exact.
 That optional block is capped at 2 KiB; `(headers cut; incomplete evidence)`
 means its evidence is inconclusive. Upload's body and deadline caps are in W9.
 
@@ -122,7 +124,7 @@ responses as evidence.
 ## W7: Hook-friendly commands
 
 Use `node scripts/break-it.mjs` for check, copy, scan, mask, send, load, make,
-upload, net, seal, cleanup, and report. Use
+upload, net, sessions, seal, cleanup, and report. Use
 Node's standard library for portable data handling. Do not use privileged shell
 commands, destructive shell shortcuts, downloaded installers, or Git history
 rewrites. The one plain-git exception reads history from the copy and pipes it
@@ -216,3 +218,29 @@ F02/F04 finding needs code evidence that the relevant app limits are switched
 off. Stop on an observed crash/outage and never repeat the damaging try. Use
 normal `send` controls before and after the family; keep seal, cleanup and
 report unchanged. Family F covers user-side connections only.
+
+
+## W11: Login values stay hidden
+
+Use Family G only on the owner's throwaway localhost copy, with made-up users.
+Bearer keys and session cookie values are never printed or saved in findings,
+not even their first/last characters. Show shape only: name, length, flags,
+character family and pattern. `send` fully masks JSON login fields and known
+login values, and Set-Cookie always hides the whole value, whatever it looks like.
+
+W6 applies to `sessions` too: at most 20 sequential logins via `sendRequest`,
+the same localhost pinning, five-second deadline, no redirects and no retries.
+Default 10; stop on a failed login or any lockout. Count A09 and G03 together
+per disposable user. Sampled values stay in memory only. Salted fingerprints
+and lengths, never raw samples, stay in guarded run metadata and then its
+cleanup receipt so the report guard can refuse a sampled value after cleanup.
+The receipt disappears after a successful report.
+
+`send --jar <run-id>` stores cookies only in that guarded run's jar.json,
+using the same run checks as seal. At most 20 cookies, each at most 4 KiB,
+returned only to the exact localhost host:port that issued them; Domain never
+broadens the target. No free-text cookie option. Cleanup removes the jar with
+the entire run. Never inspect or paste its contents as evidence. Forged values
+are used for one request only, never saved or printed; the jar stays unchanged.
+Only four fixed forge kinds exist, with no JWT payload editing. W7's same
+`node scripts/break-it.mjs` entry handles sessions and the jar options.

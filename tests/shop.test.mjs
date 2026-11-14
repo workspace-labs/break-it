@@ -15,7 +15,7 @@ import { cleanupRun } from '../scripts/lib/cleanup.mjs';
 test('shop source gives away no hole, try id or demo answer', async () => {
   for (const file of await readdir(examplePath)) {
     const source = await readFile(path.join(examplePath, file), 'utf8');
-    assert.doesNotMatch(source, /PLANTED|HOLE|[ABCDEF]0|demo/i, file);
+    assert.doesNotMatch(source, /PLANTED|HOLE|[ABCDEFG]0|demo/i, file);
   }
 });
 
@@ -40,7 +40,13 @@ test('shop answer key stays outside the app and identifies actual source lines',
     ['E08', 'try { bytes = await readFile(path.join(uploadsFolder, name)); }'],
     ['F01', 'const keepCompleteUploads ='],
     ['F02', 'const boundedConnections ='],
-    ['F04', 'const boundedConnections =']
+    ['F04', 'const boundedConnections ='],
+    ['G01', 'const invalidateLogout ='],
+    ['G03', 'const unpredictableSessions ='],
+    ['G04', 'const expireSessions ='],
+    ['G05', 'const invalidateOtherSessions ='],
+    ['G06', 'const protectedCookie ='],
+    ['G07', 'const uniformLoginErrors =']
   ]) {
     const line = source.split('\n').findIndex(text => text.includes(anchor)) + 1;
     assert.ok(line > 0, anchor);
@@ -60,11 +66,13 @@ test('shop end to end detects planted holes and preserves the safe route', async
     [['C01', 'CRITICAL'], ['B01', 'CRITICAL'], ['A01', 'SMALL'], ['A09', 'SMALL'],
       ['C03', 'CRITICAL'], ['C04', 'SMALL'], ['D01', 'CRITICAL'], ['D02', 'SMALL'], ['D04', 'CRITICAL'],
       ['E01', 'SMALL'], ['E03', 'CRITICAL'], ['E04', 'CRITICAL'], ['E07', 'CRITICAL'], ['E08', 'CRITICAL'],
-      ['F01', 'SMALL'], ['F02', 'SMALL'], ['F04', 'SMALL']]);
+      ['F01', 'SMALL'], ['F02', 'SMALL'], ['F04', 'SMALL'],
+      ['G01', 'CRITICAL'], ['G03', 'CRITICAL'], ['G04', 'SMALL'], ['G05', 'SMALL'],
+      ['G06', 'SMALL'], ['G07', 'SMALL']]);
   assert.ok(result.rounds[0].findings.every(f => /^(?:server|config)\.mjs:\d+$/.test(f.Where)));
   assert.equal(result.rounds[0].findings.some(f => f.id === 'B02-safe'), false);
-  assert.equal(result.rounds[0].attacks.blocked, 9);
-  assert.equal(result.rounds[0].attacks.tried, 26);
+  assert.equal(result.rounds[0].attacks.blocked, 11);
+  assert.equal(result.rounds[0].attacks.tried, 34);
   const traversal = result.rounds[0].findings.find(f => f.id === 'E08');
   assert.match(traversal.Saw, /HTTP 200/);
   assert.match(traversal.Saw, /server\.mjs/);
@@ -76,10 +84,15 @@ test('shop end to end detects planted holes and preserves the safe route', async
   assert.equal(result.output.includes(value), false);
   assert.equal(result.output.includes('synthetic-password-hash-local-only'), false);
   assert.deepEqual(result.rounds[1].findings, []);
-  assert.equal(result.rounds[1].attacks.blocked, 26);
+  assert.equal(result.rounds[1].attacks.blocked, 34);
   for (const round of result.rounds) {
     assert.equal(round.findings.some(f => f.id === 'D-safe'), false);
     assert.equal(round.findings.some(f => f.id === 'E-safe'), false);
+    assert.equal(round.findings.some(f => f.id === 'G-safe'), false);
+    assert.equal(round.findings.some(f => f.id === 'G02'), false);
+    assert.deepEqual(round.login.find(item => item.id === 'G02').kinds, ['made-up', 'one-char']);
+    assert.equal(round.login.find(item => item.id === 'G02').blocked, true);
+    assert.equal(round.login.find(item => item.id === 'G-safe').after, 200);
     for (const id of ['F03', 'F05-garbage', 'F05-bad-header', 'F05-huge-header', 'F05-two-lengths']) {
       assert.equal(round.findings.some(f => f.id === id), false, `${id} stays blocked`);
     }

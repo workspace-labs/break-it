@@ -4,6 +4,7 @@ import { runPath, validId } from './runs.mjs';
 import { verifySeal } from './seal.mjs';
 import { loadReceipt, deleteReceipt } from './receipts.mjs';
 import { findSecrets, findNestedReview, safeLabel } from './leaks.mjs';
+import { guardLoginValues } from './login-values.mjs';
 
 function guardSecrets(value, id) {
   if (typeof value === 'string' && (findSecrets(value).length || findNestedReview(value).length)) {
@@ -23,6 +24,7 @@ function text(value, field) {
   }
 }
 export function validateFindings(data) {
+  guardLoginValues(data);
   for (const finding of Array.isArray(data?.findings) ? data.findings : []) {
     guardSecrets(finding, typeof finding?.id === 'string' ? finding.id : 'unknown');
   }
@@ -74,15 +76,16 @@ function validateReceipt(receipt, id) {
 }
 export async function reportRun(id, data) {
   validId(id);
-  validateFindings(data);
   const dir = await runPath(id, { exists: false });
   let present = true;
   try { await lstat(dir); } catch (error) { if (error.code === 'ENOENT') present = false; else throw error; }
   if (present) throw new Error('Refused: run cleanup before writing the report.');
   const { receipt, identity } = await loadReceipt(id);
   validateReceipt(receipt, id);
+  guardLoginValues(data, receipt.loginShapes);
+  validateFindings(data);
   await verifySeal(receipt);
-  const header = data.round === 1 ? `BREAK-IT REPORT ${data.project} · version 0.6.0` : `ROUND ${data.round} ${data.project}`;
+  const header = data.round === 1 ? `BREAK-IT REPORT ${data.project} · version 0.7.0` : `ROUND ${data.round} ${data.project}`;
   const { tried, blocked, gotThrough } = data.attacks;
   const lines = [header, 'Seal: real project unchanged', `Attacks: ${tried} tried   ${blocked} blocked   ${gotThrough} got through`];
   const sorted = [...data.findings].sort((a, b) => Number(b.severity === 'CRITICAL') - Number(a.severity === 'CRITICAL'));

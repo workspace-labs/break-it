@@ -1,9 +1,9 @@
 ---
 name: break-it
-description: "Use when an independent reviewer asks to break, attack, or stress-test their own project before release, on a throwaway localhost copy. Tests bad input, access control, bad file uploads, resilience under bounded load, bad network connections, and leaks: secrets in files/history, over-sharing replies, error details and logs. Reports holes. Never for the builder testing their own delivery, live sites, other people's systems, code fixes or performance benchmarking."
+description: "Use when an independent reviewer asks to break, attack, or stress-test their own project before release, on a throwaway localhost copy. Tests bad input, access control, bad file uploads, resilience under bounded load, bad network connections, login and sessions, and leaks: secrets in files/history, over-sharing replies, error details and logs. Reports holes. Never for the builder testing their own delivery, live sites, other people's systems, code fixes or performance benchmarking."
 ---
 
-# Break-it 0.6.0
+# Break-it 0.7.0
 
 Find holes in the owner's own project before release. Only the independent reviewer
 (scanner) uses this skill. It reports evidence in plain words; it never fixes code.
@@ -45,7 +45,8 @@ the app's working folder separately. Do not install tools or dependencies.
    [leaks](references/attacks-leaks.md),
    [load: many users at once](references/attacks-load.md),
    [bad files: uploads](references/attacks-files.md), and
-   [bad network connections](references/attacks-network.md). Pick applicable tries;
+   [bad network connections](references/attacks-network.md), and
+   [login and sessions](references/attacks-login.md). Pick applicable tries;
    record each inapplicable try in the optional findings JSON `skipped` list,
    for example `{"id":"A07","reason":"No create or update route to submit twice"}`.
    Use unique ids that do not also appear in findings. Skips never change counts.
@@ -70,6 +71,31 @@ the app's working folder separately. Do not install tools or dependencies.
    node scripts/break-it.mjs send POST http://localhost:4000/login --json '{"user":"A","password":"invented"}'
    node scripts/break-it.mjs send GET http://localhost:4000/orders/6 --token LOCAL_TEST_SESSION
    ```
+
+   For login/session checks, read Family G and run it last among the per-request
+   families, before final log inspection. Some tries log out or change a password.
+   Use only made-up local users. Count A09 and G03 together per disposable user
+   and stop at any lockout. Login values stay hidden: shape only, never partial
+   characters. The jar stays inside the run and cleanup removes it; never display
+   its contents. These examples retain cookies without printing their values:
+
+   ```text
+   node scripts/break-it.mjs send POST http://localhost:4000/login --json '{"user":"A","password":"invented"}' --jar <run-id>
+   node scripts/break-it.mjs send POST http://localhost:4000/login --json '{"user":"A","password":"invented"}' --headers
+   node scripts/break-it.mjs send GET http://localhost:4000/account --jar <run-id> --forge made-up
+   node scripts/break-it.mjs sessions <run-id> POST http://localhost:4000/login --json '{"user":"A","password":"invented"}' --field token --count 10
+   ```
+
+   `--headers` includes every Set-Cookie with its value fully masked and flags
+   exact; its 2 KiB cap and incomplete-evidence marker apply. `--jar` keeps at
+   most 20 cookies of at most 4 KiB for their exact localhost host:port. There
+   is no free-text cookie option. `--forge` supports only made-up, one-char,
+   jwt-none and jwt-bad-sig, for one request without saving it; JWT kinds refuse
+   a non-JWT and never alter its payload. `sessions` runs 10 sequential logins
+   by default, hard cap 20, through the same send transport. It prints only
+   bounded shapes/patterns and stops on a failed login. “No pattern found” is
+   never proof of randomness. See G04–G07 for code-reading, skip/inconclusive,
+   production Secure-cookie and timing boundaries.
 
 4. Try one case at a time, using one `send` command per request and the bounded
    cases from the references. `send` makes one local-only request with a 5-second

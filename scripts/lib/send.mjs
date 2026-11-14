@@ -5,6 +5,10 @@ import { performance } from 'node:perf_hooks';
 import { StringDecoder } from 'node:string_decoder';
 import { Readable } from 'node:stream';
 import { checkUrl } from './target.mjs';
+import { readJar, writeJar, matchingCookies, updateJar, parseSetCookie } from './cookies.mjs';
+import { forgeLoginValue, validateForge } from './login-forge.mjs';
+import { rememberLoginValue, rememberRunLoginValue } from './login-values.mjs';
+export { parseSetCookie, formatSetCookie } from './cookies.mjs';
 
 const bodyLimit = 64 * 1024;
 const outputLimit = 2 * 1024;
@@ -18,6 +22,7 @@ function boundedText(buffer) {
 }
 
 export function validateRequest(method, input, { json, token } = {}) {
+  rememberLoginValue(token);
   const url = checkUrl(input);
   if (typeof method !== 'string' || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(method)) {
     throw new Error('Refused: method must be one HTTP method.');
@@ -29,15 +34,41 @@ export function validateRequest(method, input, { json, token } = {}) {
   return url;
 }
 
-export async function sendRequest(method, input, { json, token, signal } = {}) {
+export async function sendRequest(method, input, { json, token, signal, jar, forge } = {}) {
   const url = validateRequest(method, input, { json, token });
+  validateForge(forge);
+  const stored = jar === undefined ? undefined : await readJar(jar);
+  const cookies = stored ? matchingCookies(stored, url) : [];
+  if (forge && token === undefined && !cookies.length) throw new Error('Refused: forge needs a login value from --token or --jar.');
   const headers = { Host: url.host };
   if (json !== undefined) {
     headers['Content-Type'] = 'application/json';
     headers['Content-Length'] = Buffer.byteLength(json);
   }
-  if (token !== undefined) headers.Authorization = `Bearer ${token}`;
-  return requestOnce(method, url, { headers, json, signal });
+  if (token !== undefined) {
+    rememberLoginValue(token);
+    const sent = forge ? forgeLoginValue(token, forge) : token;
+    rememberLoginValue(sent);
+    headers.Authorization = `Bearer ${sent}`;
+  }
+  if (cookies.length) headers.Cookie = cookies.map(cookie => {
+    rememberLoginValue(cookie.value);
+    const sent = forge ? forgeLoginValue(cookie.value, forge) : cookie.value;
+    rememberLoginValue(sent);
+    return `${cookie.name}=${sent}`;
+  }).join('; ');
+  const response = await requestOnce(method, url, { headers, json, signal });
+  const received = response.headers['set-cookie'] ?? [];
+  for (const raw of received) {
+    const cookie = parseSetCookie(raw);
+    if (cookie) rememberLoginValue(cookie.value);
+  }
+  if (stored && !forge) {
+    const updated = updateJar(stored, url, received);
+    for (const cookie of [...cookies, ...updated.cookies]) if (cookie.value) await rememberRunLoginValue(jar, cookie.value);
+    if (received.length) await writeJar(jar, updated);
+  }
+  return { ...response, ...(forge ? { forged: forge } : {}) };
 }
 
 // Both JSON and file requests use this single transport. No DNS, proxy,
@@ -87,7 +118,7 @@ function requestOnce(method, url, { headers, json, source, signal, deadline = 50
           const display = boundedText(Buffer.concat(chunks));
           return { status: res.statusCode, body: display.body, cut: cut || display.cut,
             ...(source ? { sentBytes } : {}),
-            headers: Object.fromEntries(['content-type', 'content-disposition', 'content-security-policy']
+            headers: Object.fromEntries(['content-type', 'content-disposition', 'content-security-policy', 'set-cookie']
               .filter(key => res.headers[key] !== undefined).map(key => [key, res.headers[key]])) };
         };
         res.on('data', chunk => {
@@ -157,12 +188,14 @@ export function sendOptions(args) {
       i--;
       continue;
     }
-    const key = args[i] === '--json' ? 'json' : args[i] === '--token' ? 'token' : undefined;
+    const keys = { '--json': 'json', '--token': 'token', '--jar': 'jar', '--forge': 'forge' };
+    const key = Object.hasOwn(keys, args[i]) ? keys[args[i]] : undefined;
     if (!key || i + 1 >= args.length || options[key] !== undefined) {
       throw new Error('Refused: send accepts one --json body and one --token bearer.');
     }
     options[key] = args[i + 1];
   }
+  validateForge(options.forge);
   return options;
 }
 
