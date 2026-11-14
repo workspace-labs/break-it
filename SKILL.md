@@ -155,7 +155,9 @@ the app's working folder separately. Do not install tools or dependencies.
    the connection is held and after every kind:
 
    ```text
-   node scripts/break-it.mjs net <run-id> cut POST http://localhost:4000/upload --probe http://localhost:4000/health --file normal.png --token LOCAL_TEST_SESSION
+   node scripts/break-it.mjs make <run-id> medium-png
+   node scripts/break-it.mjs upload <run-id> POST http://localhost:4000/upload --file medium.png --token LOCAL_TEST_SESSION
+   node scripts/break-it.mjs net <run-id> cut POST http://localhost:4000/upload --probe http://localhost:4000/health --file medium.png --token LOCAL_TEST_SESSION
    node scripts/break-it.mjs net <run-id> slow GET http://localhost:4000/items --probe http://localhost:4000/health --seconds 2
    node scripts/break-it.mjs net <run-id> leave POST http://localhost:4000/items --probe http://localhost:4000/health --json '{"text":"local control"}'
    node scripts/break-it.mjs net <run-id> short POST http://localhost:4000/items --probe http://localhost:4000/health --json '{"text":"local control"}' --seconds 2
@@ -166,7 +168,8 @@ the app's working folder separately. Do not install tools or dependencies.
    ```
 
    `cut` sends exactly half the body rounded down, then closes. Use a made file
-   already accepted when uploaded completely, with storage inside the copy.
+   already accepted when uploaded completely, with storage inside the copy;
+   the harmless 100 KiB `medium-png` ensures the cut reaches file content.
    `slow` drips request line/headers one byte per 500 ms; `leave` sends the
    complete request and closes without reading; `short` requires more than
    10 JSON bytes and sends exactly 10 before going silent. The four F05 shapes
@@ -177,8 +180,12 @@ the app's working folder separately. Do not install tools or dependencies.
    seconds; F05 waits at most five seconds. No socket stays open on return.
    Output always names sent/total bytes, elapsed time, who closed, the app's
    reaction and both probe results (`n/a` during other kinds). An app answer
-   gets send's masked Status/body block capped at 2 KiB. Probe failures and
-   app behavior are measurements, not refusals. `still open at our limit` is
+   gets send's masked Status/body block capped at 2 KiB. A stopped during-probe
+   is break-it's own limit and never evidence. Its line is
+   `probe during: stopped when the try ended after <T> s (not evidence)`; if its
+   answer is needed, run again with a larger `--seconds`. Only a genuine probe
+   failure says `app did not answer`. Probe failures and app behavior are
+   measurements, not refusals. `still open at our limit` is
    break-it's own cap and is NEVER evidence of a hole on its own; default or
    unknown app limits make it inconclusive. Confirm disabled limits in the
    copy's code before a SMALL F02/F04 finding. Stop on a crash/outage, never

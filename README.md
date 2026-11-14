@@ -85,7 +85,9 @@ node scripts/break-it.mjs load GET http://localhost:4000/health --requests 20 --
 node scripts/break-it.mjs make RUN_ID normal-png
 node scripts/break-it.mjs upload RUN_ID POST http://localhost:4000/upload --file normal.png --token LOCAL_TEST_SESSION
 node scripts/break-it.mjs send GET http://localhost:4000/uploads/normal.png --headers --token LOCAL_TEST_SESSION
-node scripts/break-it.mjs net RUN_ID cut POST http://localhost:4000/upload --probe http://localhost:4000/health --file normal.png --token LOCAL_TEST_SESSION
+node scripts/break-it.mjs make RUN_ID medium-png
+node scripts/break-it.mjs upload RUN_ID POST http://localhost:4000/upload --file medium.png --token LOCAL_TEST_SESSION
+node scripts/break-it.mjs net RUN_ID cut POST http://localhost:4000/upload --probe http://localhost:4000/health --file medium.png --token LOCAL_TEST_SESSION
 node scripts/break-it.mjs net RUN_ID slow GET http://localhost:4000/health --probe http://localhost:4000/health --seconds 2
 node scripts/break-it.mjs scan RUN_ID
 node scripts/break-it.mjs seal RUN_ID
@@ -176,8 +178,8 @@ an app's storage; confirm this before sending any file.
 
 `make RUN_ID KIND` creates one fixed test file under that run's `files/` folder
 and prints its name, byte count and description. Available kinds are
-`normal-png`, `big`, `fake-image`, `html-script`, `svg-script`, `zip-bomb`,
-`empty` and `truncated-png`. Never download a test file, build one by hand or
+`normal-png`, `medium-png`, `big`, `fake-image`, `html-script`, `svg-script`,
+`zip-bomb`, `empty` and `truncated-png`. Never download a test file, build one by hand or
 provide a file of your own. The script examples only change the document title
 to `break-it`. `big --mb N` streams zeros, defaults to 20 MiB and cannot exceed
 50 MiB; MiB is 1,048,576 bytes. The ZIP is under 1 MiB and contains one fixed
@@ -258,7 +260,8 @@ repeat or concurrency option is available. Only `slow` and `short` accept
 over 10 bytes; all JSON bodies have the same 64 KiB cap as `send`. Only `cut`
 accepts `--file`, using upload's guarded made file and shared multipart builder,
 with a 51 MiB total cap. First confirm that a full upload would be accepted and
-that storage is inside the copy. The four broken-request kinds accept no body.
+that storage is inside the copy. Use the harmless 100 KiB `medium-png` for a
+cut upload so the cut reaches file content. The four broken-request kinds accept no body.
 `--token` uses send's existing validation.
 
 Every command opens one bad connection plus at most two normal probes. A probe
@@ -269,16 +272,19 @@ wait at most five seconds. No socket or file is left behind. Output always
 shows bytes sent, elapsed time, app reaction and both probes; `probe during`
 is `n/a` for other kinds. App answers use send's masked Status/body block capped
 at 2 KiB. Probe failures and all app behaviors are measurements; the command
-exits 0 when the try ran, nonzero only for refusals.
+exits 0 when the try ran, nonzero only for refusals. A during-probe cancelled
+when the try ends prints `stopped when the try ended after <T> s (not evidence)`;
+this is break-it's own limit, never evidence. If its answer is needed, run again
+with a larger `--seconds`. Only genuine failures say `app did not answer`.
 
 `still open at our limit` is break-it's own cap and is NEVER evidence of a hole
 on its own. For slow/incomplete requests, default or unknown app limits mean
 inconclusive. A SMALL finding needs code evidence that the relevant limits are
 switched off; a failed probe needs an established app outage/cause. Read back
 created data or inspect copy-local storage to check half-saved or duplicate work.
-For `leave`, no peer reply or reaction is observed: a closed outcome with
-`we closed: yes` records our departure. Judge the app through its probes and
-normal `send` readback. Family F covers the user's connection only.
+For `leave`, the app line is `app: not observed (we left first)` because no
+peer reply or reaction is observed. Judge the app through its probes and normal
+`send` readback. Family F covers the user's connection only.
 
 After stopping your app, run seal, then cleanup. Cleanup prints only the path of
 a receipt file under `break-it/receipts` in your OS temporary directory, outside

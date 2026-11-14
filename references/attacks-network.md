@@ -62,11 +62,14 @@ that connection clear rather than inventing two causes, as with D01/D04.
 - **Send:** `cut` to an upload or create/save route that answered the baseline.
   Headers declare the true body length, then exactly `floor(body bytes / 2)`
   bytes are sent and the socket is closed. For an upload use a made file the app
-  would accept when complete; first confirm its normal upload works.
+  would accept when complete; first confirm its normal upload works. Use the
+  harmless 100 KiB `medium-png`: the cut must reach file content, so a tiny
+  file whose half-body ends inside the multipart header cannot show half-saved data.
 
   ```text
-  node scripts/break-it.mjs make <run-id> normal-png
-  node scripts/break-it.mjs net <run-id> cut POST http://localhost:4000/upload --probe http://localhost:4000/health --file normal.png --token LOCAL_TEST_SESSION
+  node scripts/break-it.mjs make <run-id> medium-png
+  node scripts/break-it.mjs upload <run-id> POST http://localhost:4000/upload --file medium.png --token LOCAL_TEST_SESSION
+  node scripts/break-it.mjs net <run-id> cut POST http://localhost:4000/upload --probe http://localhost:4000/health --file medium.png --token LOCAL_TEST_SESSION
   ```
 
 - **BLOCKED:** Nothing is half-saved and the app answers the after probe.
@@ -84,6 +87,9 @@ that connection clear rather than inventing two causes, as with D01/D04.
   node scripts/break-it.mjs net <run-id> slow GET http://localhost:4000/items --probe http://localhost:4000/health --seconds 2
   ```
 
+  A stopped during-probe is break-it's own limit, never evidence; if its answer
+  is needed, run again with a larger `--seconds`.
+
 - **BLOCKED:** The app closes the slow connection, or keeps it while the
   probe-during answers normally.
 - **HOLE:** The probe DURING fails or hangs and observation establishes that one
@@ -97,9 +103,9 @@ that connection clear rather than inventing two causes, as with D01/D04.
 ## F03: Leaves before the answer
 
 - **Send:** `leave` to a create/save route. Send the complete request, then close
-  our side immediately without reading its reply. It does not observe the
-  peer's reply or reaction: a closed outcome with `we closed: yes` records our
-  departure. Judge the app through the probes and a normal `send` readback.
+  our side immediately without reading its reply. The app line is exactly
+  `app: not observed (we left first)`. Judge the app through the probes and a
+  normal `send` readback.
 
   ```text
   node scripts/break-it.mjs net <run-id> leave POST http://localhost:4000/items --probe http://localhost:4000/health --json '{"text":"local control"}'
@@ -119,6 +125,9 @@ that connection clear rather than inventing two causes, as with D01/D04.
   ```text
   node scripts/break-it.mjs net <run-id> short POST http://localhost:4000/items --probe http://localhost:4000/health --json '{"text":"local control"}' --seconds 2
   ```
+
+  A stopped during-probe is break-it's own limit, never evidence; if its answer
+  is needed, run again with a larger `--seconds`.
 
 - **BLOCKED:** The app closes the incomplete connection, or keeps it while the
   probe-during answers normally.

@@ -969,10 +969,8 @@ tagged, released or installed; installed skill mirrors were not updated.
 
 ## 0.6.0 — Family F, bad network connections (2026-11-14)
 
-Builder: Codex. Reviewer: Claude; independent review pending. Clean `main` at
-`83c393b088a33b19c384ed1df0ff1bcc2c7b154a`. Pre-implementation Node 20.20.2 baseline:
-**523/523**, **41.897 s**. Initial sandbox attempts failed on localhost `EPERM`;
-passing runs permitted the disposable loopback servers. No assertions were weakened.
+Builder: Codex. Reviewer: Claude; independent review pending. Clean `main` at `83c393b088a33b19c384ed1df0ff1bcc2c7b154a`. Pre-implementation Node 20.20.2 baseline: **523/523**, **41.897 s**. Initial
+sandbox attempts failed on localhost `EPERM`; passing runs permitted the disposable loopback servers. No assertions were weakened.
 
 Final complete `node --test` suites ran sequentially on macOS, zero failures/skips/cancellations:
 
@@ -980,20 +978,23 @@ Final complete `node --test` suites ran sequentially on macOS, zero failures/ski
 - Node **20.20.2**: **547/547**, **59.220 s**.
 - Node **22.23.1**: **547/547**, **59.766 s**.
 
-Added **23 net tests + one W10 test**; all 523 earlier tests remain. RED preceded implementation.
-Coverage: refusals, eight wire shapes, multipart reuse, fixed byte/drip limits, overlapping probes,
-masks, redirects/proxies, resets, silent servers, socket closure and real 30 s cap. Builder inspection
-added status-600 and partial-reply EOF/deadline regressions. Two cancelled-probe fixture assertions
-were corrected. Focused send/upload: **28/28**; shop: **16/16**. Release/shop expectations expand;
-W6 only allows `node:net` in send.mjs, W7 admits net, and W10 checks literal-loopback connection.
+Added **23 net tests + one W10 test**; all 523 earlier tests remain. RED preceded implementation. Coverage: refusals, eight wire shapes, multipart reuse, fixed byte/drip limits, overlapping probes,
+masks, redirects/proxies, resets, silent servers, socket closure and real 30 s cap. Builder inspection added status-600 and partial-reply EOF/deadline regressions. Two cancelled-probe fixture
+assertions were corrected. Focused send/upload: **28/28**; shop: **16/16**. Release/shop expectations expand; W6 only allows `node:net` in send.mjs, W7 admits net, and W10 checks literal-loopback
+connection.
 
-Real `node scripts/demo-shop.mjs --write`: **4.40 s**; **26 tried / 9 blocked / 17 findings**,
-then **26 / 26 / 0**. A–E hold; F01/F02/F04 add SMALL findings, F02/F04 share one cause.
-F01's complete 102,039-byte archive is accepted both rounds before cutting; F03/all F05 stay blocked.
-Round-2 limits: headers 350 ms, requests 600 ms, checks every 50 ms. Approved docs remain identical.
+Real `node scripts/demo-shop.mjs --write`: **4.40 s**; **26 tried / 9 blocked / 17 findings**, then **26 / 26 / 0**. A–E hold; F01/F02/F04 add SMALL findings, F02/F04 share one cause. F01's complete
+102,039-byte archive is accepted both rounds before cutting; F03/all F05 stay blocked. Round-2 limits: headers 350 ms, requests 600 ms, checks every 50 ms. Approved docs remain identical.
 
-Baseline/candidate skill audits under folder name `break-it`: zero structural errors, same four notices.
-Python quick validator unavailable (PyYAML absent; no install). Evidence, logs, baseline archive and
-preservation comparison: `/private/tmp/break-it-060-evidence/`. Dependencies/installed skills unchanged.
-Only local commits; no push/tag/release/install. **Windows not run** (suite, sockets/lifecycle, paths).
-Existing scanner/isolation limits remain. These are builder checks, not independent acceptance.
+Baseline/candidate skill audits under folder name `break-it`: zero structural errors, same four notices. Python quick validator unavailable (PyYAML absent; no install). Evidence, logs, baseline
+archive and preservation comparison: `/private/tmp/break-it-060-evidence/`. Dependencies/installed skills unchanged. Only local commits; no push/tag/release/install. **Windows not run** (suite,
+sockets/lifecycle, paths). Existing scanner/isolation limits remain. These are builder checks, not independent acceptance.
+
+### 0.6.0 fix round 1 — honest Family F measurements (2026-11-14)
+
+- Codex builder; Claude re-review pending. Clean `834333c` baseline: Node 20.20.2 **547/547**, **59.081 s**, before production edits. Version stays 0.6.0; only local commits authorized.
+- F1/F3: distinguish end-of-try cancellation from real probe failure; `leave` says app reaction was not observed. RED: **2 pass / 3 fail**; GREEN: **5/5**. Genuine five-second timeout and reset controls stay failures; raw transport unchanged.
+- F2: fixed valid harmless `medium-png` is **102,400 bytes**; same documented file and demo, no archive in Family F. CRC/decode/guarded-file checks and documented CLI on both shop rounds pass; focused files/shop tests **30/30**.
+- Final sequential full suites: Node **18.20.8: 557/557, 60.426 s**; **20.20.2: 557/557, 59.621 s**; **22.23.1: 557/557, 60.252 s**. Zero failures/skips/cancellations; all 547 earlier tests plus ten additions.
+- Real regenerated demo: **3.859 s**, **26/9/17 → 26/26/0**. Round 1 keeps/serves **51,154 of 102,400** PNG bytes; round 2 retains the complete file. Existing A–E results and source anchors hold.
+- Approved docs, socket/upload/load code, walls tests, package and shop server are byte-identical. Skill audits retain the same four notices, zero structural errors. Evidence: `/private/tmp/break-it-060-fix1-evidence/`. **Windows not run**; no push/tag/release/install.

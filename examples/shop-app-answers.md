@@ -87,7 +87,7 @@ C02 history, C05 logs, and E02/E05/E06 are covered separately by tests.
 - `F01` — `server.mjs:136` — anchor `const keepCompleteUploads =`. Upload bytes
   stream into the final file before the request is complete. A cut connection
   leaves a shorter file which GET still serves (SMALL). The complete generated
-  archive control is below 1 MiB and is accepted in both rounds. Round 2 keeps
+  100 KiB PNG control is below 1 MiB and is accepted in both rounds. Round 2 keeps
   the prior complete file intact until the new request finishes.
 - `F02` — `server.mjs:100` — anchor `const boundedConnections =`. Header and request
   time limits are explicitly 0. The catalog probe still answers during the slow

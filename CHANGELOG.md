@@ -2,6 +2,9 @@
 
 ## [0.6.0] - 2026-11-14
 
+- Fix round 1: distinguish a during-probe stopped by the try ending from a real
+  failure; use a fixed harmless 100 KiB `medium-png` for cut-upload examples and
+  the demo; report `leave` app behavior as not observed. Keep version 0.6.0.
 - Add Family F user-side bad-connection checks on the owner's throwaway localhost
   copy: interrupted bodies, slow headers, early departure, incomplete bodies and
   four fixed malformed-request shapes. No outside-service checks are added.

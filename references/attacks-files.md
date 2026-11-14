@@ -32,6 +32,8 @@ The `--mb` unit is MiB (1,048,576 bytes); the CLI calls it MB for brevity.
 These are fixed kinds, not paths or user-supplied content:
 
 - `normal-png`: `normal.png`, a tiny valid PNG; default type `image/png`.
+- `medium-png`: `medium.png`, a harmless valid PNG of exactly 100 KiB
+  (102,400 bytes) for interrupted-upload tries; default type `image/png`.
 - `big`: `big.bin`, streamed zeros, default 20 MiB, optional `--mb N` from 1
   through 50 MiB; default type `application/octet-stream`.
 - `fake-image`: `photo.jpg`, harmless HTML text claiming to be an image;

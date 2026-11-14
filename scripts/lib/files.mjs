@@ -11,6 +11,7 @@ const chunkSize = 64 * 1024;
 const zeroChunk = Buffer.alloc(chunkSize);
 const definitions = {
   'normal-png': ['normal.png', 'image/png', 'tiny valid PNG control'],
+  'medium-png': ['medium.png', 'image/png', '100 KiB valid PNG for interrupted uploads'],
   big: ['big.bin', 'application/octet-stream', 'bounded file of zeros'],
   'fake-image': ['photo.jpg', 'image/jpeg', 'HTML text named as a JPEG'],
   'html-script': ['marker.html', 'text/html', 'HTML with a harmless title marker'],
@@ -44,8 +45,12 @@ ihdr[8] = 8;
 ihdr[9] = 6;
 const normalPng = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), pngChunk('IHDR', ihdr),
   pngChunk('IDAT', deflateSync(Buffer.from([0, 40, 110, 180, 255]))), pngChunk('IEND', Buffer.alloc(0))]);
+const pngPadding = Buffer.alloc(100 * 1024 - normalPng.length - 12, 0x61);
+Buffer.from('Padding\0').copy(pngPadding);
+const mediumPng = Buffer.concat([normalPng.subarray(0, -12), pngChunk('tEXt', pngPadding), normalPng.subarray(-12)]);
 const fixedBytes = {
   'normal-png': normalPng,
+  'medium-png': mediumPng,
   'fake-image': Buffer.from('<!doctype html><html><title>break-it marker</title><body>Harmless file-type control.</body></html>\n'),
   'html-script': Buffer.from('<!doctype html><html><body><script>document.title = "break-it";</script></body></html>\n'),
   'svg-script': Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><script>document.title = "break-it";</script><rect width="1" height="1"/></svg>\n'),

@@ -34,7 +34,7 @@ CRITICAL  Catalog refresh does not recover after the burst
 
 CRITICAL  An upload can escape its upload folder
   Tried  Uploaded a generated PNG using the one-level traversal name preset
-  Saw    Found copy/break-it-escape-657d106e-246a-445d-94b6-39f8174abfda.txt inside the run, outside the app upload folder
+  Saw    Found copy/break-it-escape-30e6ba6e-2098-427d-a354-49db805ecb86.txt inside the run, outside the app upload folder
   Where  server.mjs:137
   Advice Reject path segments and keep every saved file inside the upload folder
 
@@ -87,8 +87,8 @@ SMALL  Oversized uploads are accepted
   Advice Reject oversized uploads with a clear 4xx before reading the whole body
 
 SMALL  A cut upload leaves an incomplete file available
-  Tried  Uploaded a complete generated archive under 1 MiB, then sent half its multipart body and closed
-  Saw    The copy still answered; 50971 of 102039 file bytes remained in uploads and GET served HTTP 200
+  Tried  Uploaded a complete generated 100 KiB PNG, then sent half its multipart body and closed
+  Saw    The copy still answered; 51154 of 102400 file bytes remained in uploads and GET served HTTP 200
   Where  server.mjs:136
   Advice Keep the prior file intact and publish an upload only after the complete request has arrived
 

@@ -207,27 +207,27 @@ async function probeNetwork(port, folder, runId, token, where, source) {
   const probe = `${base}/catalog`;
   const findings = [], observations = [];
   let blocked = 0;
-  const normal = await makeFile(runId, 'zip-bomb');
-  const complete = await uploadRequest(runId, 'POST', `${base}/upload`, { file: normal.name, token });
-  if (complete.status !== 201 || JSON.parse(complete.body).bytes !== normal.bytes) {
+  const cutFile = await makeFile(runId, 'medium-png');
+  const complete = await uploadRequest(runId, 'POST', `${base}/upload`, { file: cutFile.name, token });
+  if (complete.status !== 201 || JSON.parse(complete.body).bytes !== cutFile.bytes) {
     throw new Error('Complete upload control failed before the cut connection');
   }
   const before = await request(port, '/notes', { method: 'POST', token, data: { text: 'network-control' } });
   if (before.status !== 201) throw new Error('Normal save control failed before Family F');
-  const cut = await runNet(runId, 'cut', 'POST', `${base}/upload`, { file: normal.name, token, probe });
+  const cut = await runNet(runId, 'cut', 'POST', `${base}/upload`, { file: cutFile.name, token, probe });
   observations.push({ id: 'F01', result: cut });
   if (cut.probeAfter.status !== 200) throw new Error('Copy stopped answering after cut; stop Family F');
-  const file = path.join(folder, 'uploads', normal.name);
+  const file = path.join(folder, 'uploads', cutFile.name);
   const stored = await readFile(file);
-  const read = await sendRequest('GET', `${base}/uploads/${normal.name}`, { token });
+  const read = await sendRequest('GET', `${base}/uploads/${cutFile.name}`, { token });
   if (read.status !== 200) throw new Error('Upload read-back control failed after cut');
-  if (stored.length < normal.bytes) {
+  if (stored.length < cutFile.bytes) {
     findings.push({ id: 'F01', severity: 'SMALL', title: 'A cut upload leaves an incomplete file available',
-      Tried: 'Uploaded a complete generated archive under 1 MiB, then sent half its multipart body and closed',
-      Saw: `The copy still answered; ${stored.length} of ${normal.bytes} file bytes remained in uploads and GET served HTTP 200`,
+      Tried: 'Uploaded a complete generated 100 KiB PNG, then sent half its multipart body and closed',
+      Saw: `The copy still answered; ${stored.length} of ${cutFile.bytes} file bytes remained in uploads and GET served HTTP 200`,
       Where: where('const keepCompleteUploads ='),
       Advice: 'Keep the prior file intact and publish an upload only after the complete request has arrived' });
-  } else if (stored.length === normal.bytes) blocked++;
+  } else if (stored.length === cutFile.bytes) blocked++;
   else throw new Error('Unexpected cut-upload storage size');
   for (const [id, kind] of [['F02', 'slow'], ['F04', 'short']]) {
     const result = await runNet(runId, kind, 'POST', `${base}/notes`, {
