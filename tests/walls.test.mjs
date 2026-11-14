@@ -14,7 +14,7 @@ test('W7 skill and references contain no banned command words or shell shortcuts
     const commands = text.split('\n').filter(line => /^\s*(?:node|npm|npx|python|bash|sh|git|cd)\s/.test(line));
     for (const command of commands) {
       if (command.trim() === 'git -C "<copy>" log -p --all --no-color | node scripts/break-it.mjs mask') continue;
-      assert.match(command.trim(), /^node scripts\/break-it\.mjs (?:check|copy|seal|cleanup|report|send|scan|mask|load|make|upload)\b/, file);
+      assert.match(command.trim(), /^node scripts\/break-it\.mjs (?:check|copy|seal|cleanup|report|send|scan|mask|load|make|upload|net)\b/, file);
     }
   }
 });
@@ -37,8 +37,21 @@ test('W6 only send owns network primitives, demo pins literal loopback through s
   assert.match(demo, /sendRequest\(/);
   const sender = await readFile(path.join(root, 'scripts/lib/send.mjs'), 'utf8');
   assert.match(sender, /checkUrl\(input\)/);
-  assert.doesNotMatch(sender, /from ['"](?:node:)?(?:net|tls|dgram|dns|child_process)['"]|\bfetch\s*\(/);
+  assert.doesNotMatch(sender, /from ['"](?:node:)?(?:tls|dgram|dns|child_process)['"]|\bfetch\s*\(/);
   const skill = await readFile(path.join(root, 'SKILL.md'), 'utf8');
   assert.match(skill, /do not follow redirects or contact other services/);
   assert.match(skill, /If local-only operation cannot be established, stop/);
+});
+
+test('W10 every raw connection is in send after URL validation and literal loopback pinning', async () => {
+  const sender = await readFile(path.join(root, 'scripts/lib/send.mjs'), 'utf8');
+  assert.match(sender, /import net from 'node:net'/);
+  const raw = sender.slice(sender.indexOf('export function sendBadConnection('));
+  assert.match(raw, /const url = validateRequest\(method, input,/);
+  assert.match(raw, /url\.protocol !== 'http:'/);
+  assert.match(raw, /const hostname = url\.hostname === '\[::1\]' \? '::1' : '127\.0\.0\.1';/);
+  assert.match(raw, /net\.connect\(\{ host: hostname, port: Number\(url\.port \|\| 80\) \}\)/);
+  assert.equal([...sender.matchAll(/net\.connect\s*\(/g)].length, 1, 'no second or unguarded raw connection');
+  assert.ok(raw.indexOf('validateRequest(') < raw.indexOf('net.connect('));
+  assert.ok(raw.indexOf('const hostname =') < raw.indexOf('net.connect('));
 });

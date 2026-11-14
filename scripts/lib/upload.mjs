@@ -33,6 +33,18 @@ export async function uploadRequest(id, method, input, options = {}) {
   validId(id);
   validateRequest(method, input, { token: options.token });
   if (!/^(POST|PUT)$/.test(method)) throw new Error('Refused: upload method must be POST or PUT.');
+  return withUploadBody(id, options, async body => {
+    const { sentBytes, ...response } = await sendFileRequest(method, input, { ...body,
+      token: options.token, big: body.kind === 'big' });
+    const fileBytesSent = Math.min(body.bytes, Math.max(0, sentBytes - body.prefixLength));
+    return { ...response, uploaded: { bytes: body.bytes, sentBytes: fileBytesSent, name: body.name, type: body.type,
+      deadline: body.kind === 'big' ? 30000 : 5000 } };
+  });
+}
+
+// Both upload and net cut use this one multipart builder and guarded file handle.
+export async function withUploadBody(id, options, consume) {
+  validId(id);
   const field = options.field ?? 'file';
   // Multipart header values cannot introduce another header or part. The fixed
   // filename presets alone may contain unusual bytes, all inside the part body.
@@ -66,11 +78,8 @@ export async function uploadRequest(id, method, input, options = {}) {
       if (bytes !== made.bytes) throw new Error('Refused: generated file changed during upload.');
       yield suffix;
     })());
-    const { sentBytes, ...response } = await sendFileRequest(method, input, { source, length, boundary,
-      token: options.token, big: made.kind === 'big' });
-    const fileBytesSent = Math.min(made.bytes, Math.max(0, sentBytes - prefix.length));
-    return { ...response, uploaded: { bytes: made.bytes, sentBytes: fileBytesSent, name, type,
-      deadline: made.kind === 'big' ? 30000 : 5000 } };
+    return await consume({ source, length, boundary, prefixLength: prefix.length,
+      bytes: made.bytes, name, type, kind: made.kind });
   } finally {
     source?.destroy();
     fileStream?.destroy();

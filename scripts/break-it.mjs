@@ -48,6 +48,11 @@ async function main(args) {
   } else if (command === 'report' && first && rest.length === 1) {
     const { reportRun } = await import('./lib/report.mjs');
     console.log(await reportRun(first, JSON.parse(await readFile(rest[0], 'utf8'))));
+  } else if (command === 'net' && first && rest.length >= 3) {
+    const { runNet, netOptions, formatNet } = await import('./lib/network.mjs');
+    const result = await runNet(first, rest[0], rest[1], rest[2], netOptions(rest.slice(3)));
+    console.log(redactSecrets(formatNet(result), { minimumLength: 1 }));
+    if (result.response) printResponse(result.response);
   } else if (command === 'load' && first && rest.length >= 1) {
     const { runLoad, loadOptions, formatLoad } = await import('./lib/load.mjs');
     console.log(redactSecrets(formatLoad(await runLoad(first, rest[0], loadOptions(rest.slice(1))))));
@@ -69,7 +74,7 @@ async function main(args) {
     const options = sendOptions(rest.slice(1));
     printResponse(await sendRequest(first, rest[0], options), options.headers);
   } else {
-    throw new Error('Usage: node scripts/break-it.mjs check <project> [--url URL] | copy <project> [--skip] | seal <run-id> | scan <run-id> | mask | cleanup <run-id> | report <run-id> <findings.json> | make <run-id> <kind> [--mb N] | upload <run-id> <POST|PUT> <URL> --file <made-file> [--field name] [--type content-type] [--name preset] [--token bearer] | send <METHOD> <URL> [--json <body>] [--token <bearer>] [--headers] | load <METHOD> <URL> [--requests N] [--concurrency C] [--duration S] [--json <body>] [--token <bearer>]');
+    throw new Error('Usage: node scripts/break-it.mjs check <project> [--url URL] | copy <project> [--skip] | seal <run-id> | scan <run-id> | mask | cleanup <run-id> | report <run-id> <findings.json> | make <run-id> <kind> [--mb N] | upload <run-id> <POST|PUT> <URL> --file <made-file> [--field name] [--type content-type] [--name preset] [--token bearer] | send <METHOD> <URL> [--json <body>] [--token <bearer>] [--headers] | net <run-id> <kind> <METHOD> <URL> --probe <URL> [--json <body> | --file <made-file>] [--token <bearer>] [--seconds N] | load <METHOD> <URL> [--requests N] [--concurrency C] [--duration S] [--json <body>] [--token <bearer>]');
   }
 }
 main(process.argv.slice(2)).catch(error => {
