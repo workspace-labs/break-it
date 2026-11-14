@@ -68,20 +68,25 @@ the app's working folder separately. Do not install tools or dependencies.
    Use `send` for ordinary per-request tries and control requests:
 
    ```text
-   node scripts/break-it.mjs send POST http://localhost:4000/login --json '{"user":"A","password":"invented"}'
-   node scripts/break-it.mjs send GET http://localhost:4000/orders/6 --token LOCAL_TEST_SESSION
+   node scripts/break-it.mjs send POST http://localhost:4000/login --json '{"user":"A","password":"invented"}' --jar <run-id>
+   node scripts/break-it.mjs send GET http://localhost:4000/orders/6 --jar <run-id>
    ```
+
+   Use `--token` only for a fixed test key the owner gives you. Otherwise use
+   `--jar` for cookie apps; for bearer apps add `--keep-field <json key>` to
+   the login (choose the real reply field from the copy's code), then use
+   `--jar` on send/upload/net/load. Login values stay hidden in that run's jar.
 
    For login/session checks, read Family G and run it last among the per-request
    families, before final log inspection. Some tries log out or change a password.
    Use only made-up local users. Count A09 and G03 together per disposable user
    and stop at any lockout. Login values stay hidden: shape only, never partial
    characters. The jar stays inside the run and cleanup removes it; never display
-   its contents. These examples retain cookies without printing their values:
+   its contents. These examples retain cookies or a JSON bearer without printing values:
 
    ```text
    node scripts/break-it.mjs send POST http://localhost:4000/login --json '{"user":"A","password":"invented"}' --jar <run-id>
-   node scripts/break-it.mjs send POST http://localhost:4000/login --json '{"user":"A","password":"invented"}' --headers
+   node scripts/break-it.mjs send POST http://localhost:4000/login --json '{"user":"A","password":"invented"}' --jar <run-id> --keep-field token --headers
    node scripts/break-it.mjs send GET http://localhost:4000/account --jar <run-id> --forge made-up
    node scripts/break-it.mjs sessions <run-id> POST http://localhost:4000/login --json '{"user":"A","password":"invented"}' --field token --count 10
    ```
@@ -89,9 +94,21 @@ the app's working folder separately. Do not install tools or dependencies.
    `--headers` includes every Set-Cookie with its value fully masked and flags
    exact; its 2 KiB cap and incomplete-evidence marker apply. `--jar` keeps at
    most 20 cookies of at most 4 KiB for their exact localhost host:port. There
-   is no free-text cookie option. `--forge` supports only made-up, one-char,
+   is no free-text cookie option. `--keep-field` stores one bearer per exact
+   origin and prints only the field name and length, replacing its previous
+   bearer. `--token` plus a matching jar bearer is refused. For G01 use login
+   `--jar` → protected 200 → logout `--jar --hold` → protected `--jar`; the old
+   value must now be refused. `--hold` sends values without applying the reply's
+   Set-Cookie, requires `--jar`, and refuses `--keep-field` together with it.
+   A second throwaway copy supplies G05's second jar; send both sessions to the
+   same first copy's origin and clean up both runs. Upload, net and load only
+   read matching jar values and never write the jar. Secure cookies are sent
+   to the allowed localhost hosts; G06 still judges Secure from production code.
+   `--forge` supports only made-up, one-char,
    jwt-none and jwt-bad-sig, for one request without saving it; JWT kinds refuse
-   a non-JWT and never alter its payload. `sessions` runs 10 sequential logins
+   a non-JWT and never alter its payload. Made-up preserves separators and
+   per-position digit/letter classes; one-char changes the last letter or digit
+   within its class (hex f wraps to 0). `sessions` runs 10 sequential logins
    by default, hard cap 20, through the same send transport. It prints only
    bounded shapes/patterns and stops on a failed login. “No pattern found” is
    never proof of randomness. See G04–G07 for code-reading, skip/inconclusive,
@@ -112,7 +129,7 @@ the app's working folder separately. Do not install tools or dependencies.
    answers. Start small; a burst is one logical try, not one try per request:
 
    ```text
-   node scripts/break-it.mjs load GET http://localhost:4000/health --requests 20 --concurrency 2 --duration 1
+   node scripts/break-it.mjs load GET http://localhost:4000/health --requests 20 --concurrency 2 --duration 1 --jar <run-id>
    ```
 
    A `cancelled at deadline` count is break-it's own limit and is NEVER evidence
@@ -145,8 +162,8 @@ the app's working folder separately. Do not install tools or dependencies.
 
    ```text
    node scripts/break-it.mjs make <run-id> normal-png
-   node scripts/break-it.mjs upload <run-id> POST http://localhost:4000/upload --file normal.png --token LOCAL_TEST_SESSION
-   node scripts/break-it.mjs send GET http://localhost:4000/uploads/normal.png --token LOCAL_TEST_SESSION
+   node scripts/break-it.mjs upload <run-id> POST http://localhost:4000/upload --file normal.png --jar <run-id>
+   node scripts/break-it.mjs send GET http://localhost:4000/uploads/normal.png --jar <run-id>
    ```
 
    `make` writes only inside the run's `files/`. `big` defaults to 20 MiB, accepts
@@ -182,8 +199,8 @@ the app's working folder separately. Do not install tools or dependencies.
 
    ```text
    node scripts/break-it.mjs make <run-id> medium-png
-   node scripts/break-it.mjs upload <run-id> POST http://localhost:4000/upload --file medium.png --token LOCAL_TEST_SESSION
-   node scripts/break-it.mjs net <run-id> cut POST http://localhost:4000/upload --probe http://localhost:4000/health --file medium.png --token LOCAL_TEST_SESSION
+   node scripts/break-it.mjs upload <run-id> POST http://localhost:4000/upload --file medium.png --jar <run-id>
+   node scripts/break-it.mjs net <run-id> cut POST http://localhost:4000/upload --probe http://localhost:4000/health --file medium.png --jar <run-id>
    node scripts/break-it.mjs net <run-id> slow GET http://localhost:4000/items --probe http://localhost:4000/health --seconds 2
    node scripts/break-it.mjs net <run-id> leave POST http://localhost:4000/items --probe http://localhost:4000/health --json '{"text":"local control"}'
    node scripts/break-it.mjs net <run-id> short POST http://localhost:4000/items --probe http://localhost:4000/health --json '{"text":"local control"}' --seconds 2
@@ -200,8 +217,9 @@ the app's working folder separately. Do not install tools or dependencies.
    complete request and closes without reading; `short` requires more than
    10 JSON bytes and sends exactly 10 before going silent. The four F05 shapes
    take neither body option. JSON is capped at 64 KiB; only `cut` accepts a bare
-   made `--file` using upload's multipart builder and 51 MiB cap. `--token`
-   has send's validation. Only `slow`/`short` accept `--seconds` (1–30, default
+   made `--file` using upload's multipart builder and 51 MiB cap. `--jar` sends
+   matching cookies/bearer read-only; `--token` uses the owner's fixed test key.
+   Only `slow`/`short` accept `--seconds` (1–30, default
    10). All kinds stop within 30 seconds plus the final probe's own five
    seconds; F05 waits at most five seconds. No socket stays open on return.
    Output always names sent/total bytes, elapsed time, who closed, the app's

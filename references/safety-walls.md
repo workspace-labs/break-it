@@ -236,11 +236,24 @@ and lengths, never raw samples, stay in guarded run metadata and then its
 cleanup receipt so the report guard can refuse a sampled value after cleanup.
 The receipt disappears after a successful report.
 
-`send --jar <run-id>` stores cookies only in that guarded run's jar.json,
+`send --jar <run-id>` stores cookies and explicitly kept bearers only in
+that guarded run's jar.json,
 using the same run checks as seal. At most 20 cookies, each at most 4 KiB,
 returned only to the exact localhost host:port that issued them; Domain never
 broadens the target. No free-text cookie option. Cleanup removes the jar with
 the entire run. Never inspect or paste its contents as evidence. Forged values
 are used for one request only, never saved or printed; the jar stays unchanged.
+`--keep-field <json key>` requires `--jar` and stores one header-safe 1–4096
+character bearer per exact origin; the jar remains bounded (20 bearer origins,
+128 KiB overall). Only the field name and length are printed. `--hold` requires
+`--jar`, refuses `--keep-field`, and sends the old values without applying the
+reply's Set-Cookie. Use it for G01 logout reuse. A matching jar bearer plus
+`--token` is refused, never given silent precedence. `--token` comes only from
+a fixed test key supplied by the owner. Upload, net and load accept `--jar`
+read-only and never apply their replies to it. Secure cookies are sent to the
+allowed localhost hosts; production Secure protection still needs code evidence.
+Known bearer echoes inside cookie attributes stay hidden too; ordinary flags
+remain exact. Longer known values are masked before shorter ones, and cut JSON
+escape prefixes are hidden before display.
 Only four fixed forge kinds exist, with no JWT payload editing. W7's same
 `node scripts/break-it.mjs` entry handles sessions and the jar options.

@@ -31,7 +31,9 @@ Use `--json` for at most 64 KiB of UTF-8 body, including its JSON envelope, or
 The file uses upload's existing multipart builder and 51 MiB whole-body cap;
 paths, `..`, missing files and symbolic-link substitutes are refused. Before
 cutting an upload, establish that the app's resolved storage is inside the copy,
-as required for Family E. `--token` takes the same disposable bearer as `send`.
+as required for Family E. `--jar` reads matching cookies or a kept bearer from
+the run, including on probes, without applying reply cookies. `--token` is
+only a fixed test key supplied by the owner, as with `send`.
 `garbage`, `bad-header`, `huge-header` and `two-lengths` take neither body option.
 
 Only `slow` and `short` accept `--seconds N`: whole integers 1–30, default 10.
@@ -68,8 +70,8 @@ that connection clear rather than inventing two causes, as with D01/D04.
 
   ```text
   node scripts/break-it.mjs make <run-id> medium-png
-  node scripts/break-it.mjs upload <run-id> POST http://localhost:4000/upload --file medium.png --token LOCAL_TEST_SESSION
-  node scripts/break-it.mjs net <run-id> cut POST http://localhost:4000/upload --probe http://localhost:4000/health --file medium.png --token LOCAL_TEST_SESSION
+  node scripts/break-it.mjs upload <run-id> POST http://localhost:4000/upload --file medium.png --jar <run-id>
+  node scripts/break-it.mjs net <run-id> cut POST http://localhost:4000/upload --probe http://localhost:4000/health --file medium.png --jar <run-id>
   ```
 
 - **BLOCKED:** Nothing is half-saved and the app answers the after probe.

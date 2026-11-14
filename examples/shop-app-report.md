@@ -11,13 +11,13 @@ CRITICAL  A secret is stored in configuration
 CRITICAL  Other people's orders are open
   Tried  Logged in as user A, opened /orders/6 (user B's order)
   Saw    User B's order, item and example delivery address
-  Where  server.mjs:252
+  Where  server.mjs:253
   Advice Show an order only to the user who owns it
 
 CRITICAL  Profile replies expose a password hash
   Tried  Opened /profile as synthetic user A
   Saw    The reply included a passwordHash field; its value is withheld
-  Where  server.mjs:217
+  Where  server.mjs:218
   Advice Return only the public profile fields; never return password hashes
 
 CRITICAL  Catalog refresh stops answering under load
@@ -34,31 +34,31 @@ CRITICAL  Catalog refresh does not recover after the burst
 
 CRITICAL  An upload can escape its upload folder
   Tried  Uploaded a generated PNG using the one-level traversal name preset
-  Saw    Found copy/break-it-escape-7adc241f-78c5-4e0a-bcfc-976f040eed3b.txt inside the run, outside the app upload folder
-  Where  server.mjs:180
+  Saw    Found copy/break-it-escape-1ff48a0f-fd0a-486d-8673-836d8376fdea.txt inside the run, outside the app upload folder
+  Where  server.mjs:181
   Advice Reject path segments and keep every saved file inside the upload folder
 
 CRITICAL  Uploaded script markers are served inline
   Tried  Uploaded generated HTML and SVG title markers, then fetched the returned file addresses
   Saw    Served inline as text/html and image/svg+xml without attachment or sandboxing CSP
-  Where  server.mjs:204
+  Where  server.mjs:205
   Advice Serve untrusted active files as attachments or isolate them with a sandboxing policy
 
 CRITICAL  Other people's private uploads are readable
   Tried  Uploaded a generated PNG as user A; fetched its address as user B and without a login
   Saw    User B received HTTP 200; no login received HTTP 401
-  Where  server.mjs:198
+  Where  server.mjs:199
   Advice Check the file owner before returning any private upload
 
 CRITICAL  Reads outside the upload folder
   Tried  Requested server.mjs one level above uploads inside the copy using ..%2F and %2E%2E%2F
   Saw    server.mjs: HTTP 200 and HTTP 200
-  Where  server.mjs:201
+  Where  server.mjs:202
   Advice Refuse download names whose resolved paths leave the upload folder before checking file ownership
 
 CRITICAL  Logout leaves the old login working
-  Tried  Logged in, called POST /logout, then reused that same session on the own-order route
-  Saw    The old session still answered HTTP 200 after logout
+  Tried  Logged in with the jar, called POST /logout with hold, then reused its old cookie on the own-order route
+  Saw    Logout cleared the cookie, but the held old session still answered HTTP 200
   Where  server.mjs:16
   Advice Invalidate the server session when logging out
 
@@ -71,7 +71,7 @@ CRITICAL  Login values have a predictable shape
 SMALL  Empty input crashes one request
   Tried  Submitted empty text to /echo
   Saw    HTTP 500; the server remained alive
-  Where  server.mjs:242
+  Where  server.mjs:243
   Advice Reject empty text with a clear validation message before processing it
 
 SMALL  No limit on login tries
@@ -83,7 +83,7 @@ SMALL  No limit on login tries
 SMALL  Error replies expose internal details
   Tried  Opened /catalog-error as synthetic user A
   Saw    HTTP 500 included a database error and an internal source path
-  Where  server.mjs:221
+  Where  server.mjs:222
   Advice Return a plain error message without database or internal path details
 
 SMALL  Login never throttles a concurrent burst
@@ -95,13 +95,13 @@ SMALL  Login never throttles a concurrent burst
 SMALL  Oversized uploads are accepted
   Tried  Uploaded a generated 20 MiB file to the disposable copy
   Saw    HTTP 201 accepted every byte; the copy stayed healthy
-  Where  server.mjs:178
+  Where  server.mjs:179
   Advice Reject oversized uploads with a clear 4xx before reading the whole body
 
 SMALL  A cut upload leaves an incomplete file available
   Tried  Uploaded a complete generated 100 KiB PNG, then sent half its multipart body and closed
   Saw    The copy still answered; 51154 of 102400 file bytes remained in uploads and GET served HTTP 200
-  Where  server.mjs:179
+  Where  server.mjs:180
   Advice Keep the prior file intact and publish an upload only after the complete request has arrived
 
 SMALL  Slow headers have no app time limit

@@ -1,18 +1,18 @@
 import { performance } from 'node:perf_hooks';
 import { runPath } from './runs.mjs';
-import { validateRequest, sendRequest, sendBadConnection } from './send.mjs';
+import { validateRequest, resolveLogin, sendRequest, sendBadConnection } from './send.mjs';
 import { withUploadBody } from './upload.mjs';
 import { safeLabel } from './leaks.mjs';
 
 const kinds = ['cut', 'slow', 'leave', 'short', 'garbage', 'bad-header', 'huge-header', 'two-lengths'];
-const keys = ['probe', 'json', 'file', 'token', 'seconds'];
+const keys = ['probe', 'json', 'file', 'token', 'jar', 'seconds'];
 
 export function netOptions(args) {
   const options = {};
   for (let i = 0; i < args.length; i += 2) {
     const key = typeof args[i] === 'string' ? args[i].slice(2) : '';
     if (!args[i]?.startsWith('--') || !keys.includes(key) || i + 1 >= args.length || Object.hasOwn(options, key)) {
-      throw new Error('Refused: net accepts one each of --probe, --json or --file, --token and --seconds.');
+      throw new Error('Refused: net accepts one each of --probe, --json or --file, --token, --jar and --seconds.');
     }
     const value = args[i + 1];
     if (key === 'seconds' && !/^\d+$/.test(value)) throw new Error('Refused: --seconds must be an integer from 1 to 30.');
@@ -45,10 +45,13 @@ export async function runNet(id, kind, method, input, options = {}) {
   if (kind === 'short' && (options.json === undefined || Buffer.byteLength(options.json) <= 10)) {
     throw new Error('Refused: short requires a --json body of more than 10 bytes.');
   }
+  // Jar/refusal checks are preflight, not a failed-connection measurement.
+  await resolveLogin(method, input, { token: options.token, jar: options.jar });
   const measureProbe = async signal => {
     const start = performance.now();
     try {
-      const response = await sendRequest('GET', options.probe, { token: options.token, signal });
+      const response = await sendRequest('GET', options.probe, { token: options.token, jar: options.jar,
+        readOnlyJar: true, signal });
       return { status: response.status, ms: performance.now() - start };
     } catch (error) {
       // sendRequest distinguishes our AbortSignal from its own timeout or a socket failure.
@@ -61,7 +64,7 @@ export async function runNet(id, kind, method, input, options = {}) {
   let during;
   const execute = async body => {
     const result = await sendBadConnection(kind, method, input, {
-      ...body, token: options.token, seconds: options.seconds ?? 10, deadline,
+      ...body, token: options.token, jar: options.jar, seconds: options.seconds ?? 10, deadline,
       onDuring: held ? signal => { during = measureProbe(signal); } : undefined,
     });
     return { ...result, kind, method: method.toUpperCase(), url: String(input),

@@ -84,15 +84,15 @@ Run from the skill folder. Quote paths containing spaces on either platform.
 node scripts/break-it.mjs check "PROJECT_FOLDER" --url http://localhost:4000
 node scripts/break-it.mjs copy "PROJECT_FOLDER"
 node scripts/break-it.mjs scan RUN_ID
-node scripts/break-it.mjs send POST http://localhost:4000/login --json '{"user":"A","password":"invented"}'
-node scripts/break-it.mjs send GET http://localhost:4000/orders/6 --token LOCAL_TEST_SESSION
-node scripts/break-it.mjs load GET http://localhost:4000/health --requests 20 --concurrency 2 --duration 1
+node scripts/break-it.mjs send POST http://localhost:4000/login --json '{"user":"A","password":"invented"}' --jar RUN_ID
+node scripts/break-it.mjs send GET http://localhost:4000/orders/6 --jar RUN_ID
+node scripts/break-it.mjs load GET http://localhost:4000/health --requests 20 --concurrency 2 --duration 1 --jar RUN_ID
 node scripts/break-it.mjs make RUN_ID normal-png
-node scripts/break-it.mjs upload RUN_ID POST http://localhost:4000/upload --file normal.png --token LOCAL_TEST_SESSION
-node scripts/break-it.mjs send GET http://localhost:4000/uploads/normal.png --headers --token LOCAL_TEST_SESSION
+node scripts/break-it.mjs upload RUN_ID POST http://localhost:4000/upload --file normal.png --jar RUN_ID
+node scripts/break-it.mjs send GET http://localhost:4000/uploads/normal.png --headers --jar RUN_ID
 node scripts/break-it.mjs make RUN_ID medium-png
-node scripts/break-it.mjs upload RUN_ID POST http://localhost:4000/upload --file medium.png --token LOCAL_TEST_SESSION
-node scripts/break-it.mjs net RUN_ID cut POST http://localhost:4000/upload --probe http://localhost:4000/health --file medium.png --token LOCAL_TEST_SESSION
+node scripts/break-it.mjs upload RUN_ID POST http://localhost:4000/upload --file medium.png --jar RUN_ID
+node scripts/break-it.mjs net RUN_ID cut POST http://localhost:4000/upload --probe http://localhost:4000/health --file medium.png --jar RUN_ID
 node scripts/break-it.mjs net RUN_ID slow GET http://localhost:4000/health --probe http://localhost:4000/health --seconds 2
 node scripts/break-it.mjs scan RUN_ID
 node scripts/break-it.mjs seal RUN_ID
@@ -164,14 +164,32 @@ Use `send` for each try and control request against that copy's port. Each comma
 sends exactly one request, with a 5-second deadline and no redirects or retries.
 `--json` sends the supplied text as-is (including deliberately malformed JSON);
 the entire UTF-8 body, including its JSON envelope, must fit within 64 KiB.
-`--token` adds a disposable local bearer session. Output is the HTTP status and
+For cookie apps, `--jar RUN_ID` keeps the login hidden and sends it back only
+on its exact localhost origin. For bearer-only apps add `--keep-field token`
+to the login (replace token with its actual JSON field), then use `--jar` on
+send/upload/net/load. It retains one bearer per origin, replacing the old one,
+and prints only the field name and length. A missing field leaves an old bearer
+unchanged; stop and choose the correct field when no login value was found.
+Field retention captures at most 64 KiB privately; only the masked 2 KiB display
+is printed, and incomplete JSON is hidden. `--token` is only a fixed test key
+the owner gives you; it is refused alongside a matching jar bearer.
+For G01, log in with `--jar`, prove a protected request answers 200, call logout
+with `--jar --hold`, then reuse `--jar` on that protected route. `--hold` keeps
+the reply's cookie deletion from hiding a server-side logout failure. It needs
+`--jar` and refuses `--keep-field` together with it. Upload/net/load read matching
+jar values without writing the jar. A second throwaway copy gives G05 a second
+jar; both logins target the same first copy's origin. Clean up both runs.
+Secure cookies are sent to the allowed localhost hosts; judge Secure protection
+from production settings in code, never from localhost HTTP.
+Output is the HTTP status and
 up to 2 KiB of response body, with detected secrets masked before CLI display
 and `(cut)` when truncated. A timeout or unseen
 response content is inconclusive, never evidence of a hole by itself.
-Optional `--headers` prints only bounded Content-Type, Content-Disposition and
-Content-Security-Policy values, so the reviewer can check how an uploaded file
-is served without exposing other response headers. This optional block has its
-own 2 KiB cap; `(headers cut; incomplete evidence)` means the headers cannot
+Optional `--headers` prints bounded Content-Type, Content-Disposition,
+Content-Security-Policy and every Set-Cookie with the value fully hidden and
+ordinary flags exact, so the reviewer can check file serving and login-cookie
+settings. Known bearer echoes inside cookie attributes are hidden too.
+This optional block has its own 2 KiB cap; `(headers cut; incomplete evidence)` means the headers cannot
 establish the result of a try.
 
 [Family E: bad files](references/attacks-files.md) adds `make` and `upload`, plus
@@ -193,8 +211,9 @@ to `break-it`. `big --mb N` streams zeros, defaults to 20 MiB and cannot exceed
 `upload RUN_ID POST URL --file MADE_NAME` sends one streamed multipart file.
 PUT is also allowed. The file name must be bare and refer to a file made in that
 run; paths, `..`, and symbolic-link substitutes are refused. `--field` defaults
-to `file`; `--type` changes the claimed content type; `--token` uses a disposable
-local bearer as with `send`. `--name` takes only the presets `traversal`,
+to `file`; `--type` changes the claimed content type; `--jar` reads the hidden
+local login without writing the jar. `--token` uses only the owner's fixed test
+key, as with `send`. `--name` takes only the presets `traversal`,
 `null-byte`, `long`, `arabic`, `emoji`, and `reserved`, never arbitrary text.
 These change only the filename sent in the multipart header; the traversal
 preset goes exactly one level up, using a run-specific marker name.
@@ -267,7 +286,8 @@ accepts `--file`, using upload's guarded made file and shared multipart builder,
 with a 51 MiB total cap. First confirm that a full upload would be accepted and
 that storage is inside the copy. Use the harmless 100 KiB `medium-png` for a
 cut upload so the cut reaches file content. The four broken-request kinds accept no body.
-`--token` uses send's existing validation.
+`--jar` reads matching cookies/bearer without writing the jar; `--token` uses
+send's validation for the owner's fixed test key.
 
 Every command opens one bad connection plus at most two normal probes. A probe
 runs during `slow`/`short` while the connection is held and after every kind,

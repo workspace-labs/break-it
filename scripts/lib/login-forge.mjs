@@ -4,15 +4,11 @@ export const forgeKinds = ['made-up', 'one-char', 'jwt-none', 'jwt-bad-sig'];
 export function validateForge(kind) {
   if (kind !== undefined && !forgeKinds.includes(kind)) throw new Error('Refused: unknown forge kind; use made-up, one-char, jwt-none or jwt-bad-sig.');
 }
-function alphabet(value) {
-  if (/^\d+$/.test(value)) return '0123456789';
-  if (/^[0-9a-f]+$/.test(value)) return '0123456789abcdef';
-  if (/^[0-9A-F]+$/.test(value)) return '0123456789ABCDEF';
-  if (/^[A-Za-z0-9_-]+$/.test(value)) return 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-';
-  // Other opaque cookie/bearer values retain their observed alphabet. A one-
-  // character alphabet needs one additional member of the same visible class.
-  const chars = [...new Set(value)];
-  return chars.length > 1 ? chars.join('') : `${chars[0]}${chars[0] === '~' ? '!' : '~'}`;
+function characterClass(character, hex, oneChar = false) {
+  if (/[0-9]/.test(character)) return '0123456789';
+  if (/[a-z]/.test(character)) return hex ? (oneChar ? '0123456789abcdef' : 'abcdef') : 'abcdefghijklmnopqrstuvwxyz';
+  if (/[A-Z]/.test(character)) return hex ? (oneChar ? '0123456789ABCDEF' : 'ABCDEF') : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  return undefined;
 }
 export function forgeLoginValue(value, kind) {
   validateForge(kind);
@@ -30,12 +26,20 @@ export function forgeLoginValue(value, kind) {
     bytes[0] ^= 1;
     return `${header}.${payload}.${bytes.toString('base64url')}`;
   }
-  const chars = alphabet(value);
+  const hex = /^[a-f]*$/i.test(value.replace(/[^a-z]/gi, ''));
+  const last = value.search(/[a-z0-9][^a-z0-9]*$/i);
+  if (last < 0) throw new Error('Refused: forge needs a login value with a letter or digit.');
+  const next = oneChar => {
+    const chars = characterClass(value[last], hex, oneChar);
+    return chars[(chars.indexOf(value[last]) + 1) % chars.length];
+  };
   if (kind === 'one-char') {
-    const last = value.at(-1);
-    return value.slice(0, -1) + chars[(chars.indexOf(last) + 1) % chars.length];
+    return value.slice(0, last) + next(true) + value.slice(last + 1);
   }
-  let made = Array.from({ length: value.length }, () => chars[randomInt(chars.length)]).join('');
-  if (made === value) made = value.slice(0, -1) + chars[(chars.indexOf(value.at(-1)) + 1) % chars.length];
+  let made = Array.from(value, character => {
+    const chars = characterClass(character, hex);
+    return chars ? chars[randomInt(chars.length)] : character;
+  }).join('');
+  if (made === value) made = value.slice(0, last) + next(false) + value.slice(last + 1);
   return made;
 }

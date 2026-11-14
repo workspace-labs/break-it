@@ -2,6 +2,13 @@
 
 ## [0.7.0] - 2026-11-14
 
+- Fix round 1: retain a hidden JSON bearer per exact origin with --keep-field;
+  hold logout reply cookies with --hold; reuse read-only jars through upload,
+  net and load. Send Secure cookies to the allowed localhost hosts and preserve
+  separators/position classes in made-up and one-char forgeries. The shop now
+  clears its logout cookie, and the demo uses the held jar to test revocation.
+  Keep version 0.7.0 and the existing isolation, masking and report guards.
+
 - Add Family G login/session checks G01–G07 on the owner's throwaway localhost
   copy only, with made-up users, shape-only evidence and safe controls.
 - Add guarded per-run cookie jars, always-masked Set-Cookie headers and four

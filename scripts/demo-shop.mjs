@@ -302,14 +302,16 @@ export async function probeLogin(port, runId, where, source) {
     Advice: 'Issue unpredictable session values; no pattern found in a small sample would not prove randomness' });
   else blocked++;
   observations.push({ id: 'G03', samples });
-  const logout = await login();
-  if ((await sendRequest('POST', `${base}/logout`, { token: logout.token })).status !== 200) {
+  await login('example-a', runId);
+  if ((await read({ jar: runId })).status !== 200) throw new Error('Family G jar control failed before logout');
+  const logout = await sendRequest('POST', `${base}/logout`, { jar: runId, hold: true });
+  if (logout.status !== 200 || !logout.headers['set-cookie']?.some(cookie => /;\s*Max-Age=0(?:;|$)/i.test(cookie))) {
     throw new Error('Family G logout control failed');
   }
-  const reused = await read({ token: logout.token });
+  const reused = await read({ jar: runId });
   if (reused.status === 200) findings.push({ id: 'G01', severity: 'CRITICAL', title: 'Logout leaves the old login working',
-    Tried: 'Logged in, called POST /logout, then reused that same session on the own-order route',
-    Saw: 'The old session still answered HTTP 200 after logout', Where: where('const invalidateLogout ='),
+    Tried: 'Logged in with the jar, called POST /logout with hold, then reused its old cookie on the own-order route',
+    Saw: 'Logout cleared the cookie, but the held old session still answered HTTP 200', Where: where('const invalidateLogout ='),
     Advice: 'Invalidate the server session when logging out' });
   else if (reused.status === 401) blocked++;
   else throw new Error('Inconclusive logout reuse response');

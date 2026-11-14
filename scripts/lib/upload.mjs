@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { openMadeFile } from './files.mjs';
 import { validId } from './runs.mjs';
-import { sendFileRequest, validateRequest } from './send.mjs';
+import { sendFileRequest, resolveLogin } from './send.mjs';
 
 function sentName(preset, name, id) {
   if (preset === undefined) return name;
@@ -19,9 +19,9 @@ export function uploadOptions(args) {
   for (let i = 0; i < args.length; i += 2) {
     const flag = args[i];
     const key = typeof flag === 'string' && flag.startsWith('--') ? flag.slice(2) : '';
-    if (!['file', 'field', 'type', 'name', 'token'].includes(key) || i + 1 >= args.length ||
+    if (!['file', 'field', 'type', 'name', 'token', 'jar'].includes(key) || i + 1 >= args.length ||
         Object.hasOwn(options, key)) {
-      throw new Error('Refused: upload accepts one each of --file, --field, --type, --name and --token.');
+      throw new Error('Refused: upload accepts one each of --file, --field, --type, --name, --token and --jar.');
     }
     options[key] = args[i + 1];
   }
@@ -31,11 +31,11 @@ export function uploadOptions(args) {
 
 export async function uploadRequest(id, method, input, options = {}) {
   validId(id);
-  validateRequest(method, input, { token: options.token });
+  await resolveLogin(method, input, { token: options.token, jar: options.jar });
   if (!/^(POST|PUT)$/.test(method)) throw new Error('Refused: upload method must be POST or PUT.');
   return withUploadBody(id, options, async body => {
     const { sentBytes, ...response } = await sendFileRequest(method, input, { ...body,
-      token: options.token, big: body.kind === 'big' });
+      token: options.token, jar: options.jar, big: body.kind === 'big' });
     const fileBytesSent = Math.min(body.bytes, Math.max(0, sentBytes - body.prefixLength));
     return { ...response, uploaded: { bytes: body.bytes, sentBytes: fileBytesSent, name: body.name, type: body.type,
       deadline: body.kind === 'big' ? 30000 : 5000 } };

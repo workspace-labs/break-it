@@ -6,19 +6,19 @@ harness locates each source line by its anchor rather than a fixed line number.
 
 - `A09` — `server.mjs:129` — anchor `const limited =`. The login retry limit is
   disabled, so 50 sequential wrong passwords never receive a retry-later response.
-- `A01` — `server.mjs:242` — anchor `if (!data.text) throw`. Empty text raises an
+- `A01` — `server.mjs:243` — anchor `if (!data.text) throw`. Empty text raises an
   exception and returns HTTP 500 for one request. The server survives, so this
   finding is SMALL. The `validateEmpty` switch controls the harness's repair.
-- `B01` — `server.mjs:252` — anchor `const requireOwner =`. The regular order route
+- `B01` — `server.mjs:253` — anchor `const requireOwner =`. The regular order route
   does not enforce ownership, so user A can read user B's synthetic order.
 - `C01` — `config.mjs:1` — anchor `export const API_KEY =`. The server imports a
   synthetic generic-assignment secret. It starts with `shopkey-EXAMPLE-` and is
   deliberately unlike a real provider credential. Evidence contains only its
   masked form; the harness removes the value in the scratch builder source.
-- `C03` — `server.mjs:217` — anchor `if (!omitPrivate) profile.passwordHash`.
+- `C03` — `server.mjs:218` — anchor `if (!omitPrivate) profile.passwordHash`.
   The profile reply includes a synthetic password hash field. This is CRITICAL
   even for the caller's own profile; evidence withholds the value.
-- `C04` — `server.mjs:221` — anchor `const hideDetails =`. A failed catalog request
+- `C04` — `server.mjs:222` — anchor `const hideDetails =`. A failed catalog request
   returns a database error and internal source path. This is SMALL.
 - `D01` — `server.mjs:123` — anchor `if (catalogJobs.length > 4) catalogAvailable = false;`.
   `/catalog-refresh` retains shared work after each request. A single request
@@ -31,22 +31,22 @@ harness locates each source line by its anchor rather than a fixed line number.
   The final probe to `/catalog-refresh` fails after its pre-burst control answered.
   The retained-work state never recovers. This is CRITICAL.
 
-- `E01` — `server.mjs:178` — anchor `const limitUploads =`. An authenticated user
+- `E01` — `server.mjs:179` — anchor `const limitUploads =`. An authenticated user
   can upload the generated 20 MiB file without a size refusal. The copy stays
   healthy, so this is SMALL. The scratch repair rejects a body over 1 MiB before
   reading it, with HTTP 413.
-- `E03` — `server.mjs:180` — anchor `const safeUploadNames =`. The client name is
+- `E03` — `server.mjs:181` — anchor `const safeUploadNames =`. The client name is
   joined directly to the app's `uploads/` folder. The one-level traversal preset
   writes `break-it-escape-<runId>.txt` beside that folder, still inside the copy
   and run. This is CRITICAL. The scratch repair rejects path names.
-- `E04` — `server.mjs:204` — anchor `const downloadUploads =`. HTML and SVG files
+- `E04` — `server.mjs:205` — anchor `const downloadUploads =`. HTML and SVG files
   are served inline using the extension's MIME type, with no attachment or
   sandboxing policy. The harmless marker only changes the document title. This
   is CRITICAL. The scratch repair adds attachment and sandboxing headers.
-- `E07` — `server.mjs:198` — anchor `const privateUploads =`. User B can read a
+- `E07` — `server.mjs:199` — anchor `const privateUploads =`. User B can read a
   generated PNG that user A uploaded. Anonymous reads already require login.
   This is CRITICAL. The scratch repair checks the saved file's owner.
-- `E08` — `server.mjs:201` — anchor `try { bytes = await readFile(path.join(uploadsFolder, name)); }`.
+- `E08` — `server.mjs:202` — anchor `try { bytes = await readFile(path.join(uploadsFolder, name)); }`.
   Encoded `..%2Fserver.mjs` and `%2E%2E%2Fserver.mjs` names read the app's own
   source one level above uploads, still inside the copy. This is CRITICAL.
   Evidence reports only the status and file name, never file content. The
@@ -85,7 +85,7 @@ it is inside the copy. Both HTML and SVG are fetched for E04. The E03 evidence
 lists every `break-it-escape-*` file in the run; cleanup deletes it with the run.
 C02 history, C05 logs, and E02/E05/E06 are covered separately by tests.
 
-- `F01` — `server.mjs:179` — anchor `const keepCompleteUploads =`. Upload bytes
+- `F01` — `server.mjs:180` — anchor `const keepCompleteUploads =`. Upload bytes
   stream into the final file before the request is complete. A cut connection
   leaves a shorter file which GET still serves (SMALL). The complete generated
   100 KiB PNG control is below 1 MiB and is accepted in both rounds. Round 2 keeps
@@ -115,7 +115,7 @@ The G03 batch is ten sequential logins; no sampled values enter reports. Safe
 controls before and after the family prove correct bearer and cookie login still
 answer normally, with a fresh correct login after the password change.
 
-- `G01` — `server.mjs:16` — anchor `const invalidateLogout =`. POST /logout returns success but leaves its server session active (CRITICAL). The scratch repair deletes it.
+- `G01` — `server.mjs:16` — anchor `const invalidateLogout =`. POST /logout clears the browser cookie with Max-Age=0 in both rounds, but initially leaves its server session active (CRITICAL). The demo uses --jar --hold to preserve the old cookie, then the old cookie still works; without --hold, cookie removal alone would hide the problem. The scratch repair revokes that server session.
 - `G03` — `server.mjs:17` — anchor `const unpredictableSessions =`. Session values count up in steps of ten (CRITICAL). The scratch repair issues randomUUID values. No pattern found in ten samples does not prove randomness.
 - `G04` — `server.mjs:18` — anchor `const expireSessions =`. Session lifetime enforcement is disabled and the cookie has no Max-Age or Expires (SMALL). The scratch repair enforces 1800 seconds on the server and adds Max-Age=1800.
 - `G05` — `server.mjs:19` — anchor `const invalidateOtherSessions =`. POST /password verifies the current own password but keeps other sessions for that user (SMALL). The scratch repair invalidates those sessions while keeping the current session.

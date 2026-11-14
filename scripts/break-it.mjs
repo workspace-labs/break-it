@@ -6,10 +6,15 @@ import { sealRun } from './lib/seal.mjs';
 import { cleanupRun } from './lib/cleanup.mjs';
 import { redactSecrets, safeLabel } from './lib/leaks.mjs';
 import { maskLoginValues } from './lib/login-values.mjs';
-import { formatSetCookie } from './lib/send.mjs';
+import { formatSetCookie, maskBearerValues } from './lib/send.mjs';
 
 function printResponse(response, showHeaders = false) {
-  const masked = redactSecrets(maskLoginValues(response.body, { cut: response.cut }), { minimumLength: 1 });
+  let body = response.body;
+  if (response.cut) {
+    try { JSON.parse(body); }
+    catch { body = maskBearerValues(body, { cut: true }); }
+  }
+  const masked = redactSecrets(maskBearerValues(maskLoginValues(body, { cut: response.cut })), { minimumLength: 1 });
   const bytes = Buffer.from(masked);
   // Avoid splitting a UTF-8 code point after masking expands a short value.
   const display = new StringDecoder('utf8').write(bytes.subarray(0, 2048));
@@ -20,11 +25,17 @@ function printResponse(response, showHeaders = false) {
     const cookies = response.headers?.['set-cookie'] ?? [];
     const headerBytes = Buffer.from([...Object.entries(labels).map(([key, label]) =>
       `${label}: ${safeLabel(redactSecrets(maskLoginValues(String(response.headers?.[key] ?? '(absent)')), { minimumLength: 1 }))}`),
-      ...cookies.map(formatSetCookie)].join('\n'));
+      ...cookies.map(cookie => maskBearerValues(formatSetCookie(cookie)))].join('\n'));
     console.log(new StringDecoder('utf8').write(headerBytes.subarray(0, 2048)));
     if (headerBytes.length > 2048) console.log('(headers cut; incomplete evidence)');
   }
   if (response.forged) console.log(`sent a forged login value (${response.forged})`);
+  if (response.held) console.log("jar held: this reply's cookies were not applied");
+  if (response.kept) {
+    const key = JSON.stringify(response.kept.key);
+    console.log(maskBearerValues(response.kept.length === undefined ? `no login value at ${key}` :
+      `kept login value from ${key} (${response.kept.length} chars)`));
+  }
 }
 
 async function main(args) {
@@ -60,11 +71,11 @@ async function main(args) {
   } else if (command === 'net' && first && rest.length >= 3) {
     const { runNet, netOptions, formatNet } = await import('./lib/network.mjs');
     const result = await runNet(first, rest[0], rest[1], rest[2], netOptions(rest.slice(3)));
-    console.log(redactSecrets(formatNet(result), { minimumLength: 1 }));
+    console.log(redactSecrets(maskLoginValues(formatNet(result)), { minimumLength: 1 }));
     if (result.response) printResponse(result.response);
   } else if (command === 'load' && first && rest.length >= 1) {
     const { runLoad, loadOptions, formatLoad } = await import('./lib/load.mjs');
-    console.log(redactSecrets(formatLoad(await runLoad(first, rest[0], loadOptions(rest.slice(1))))));
+    console.log(redactSecrets(maskLoginValues(formatLoad(await runLoad(first, rest[0], loadOptions(rest.slice(1)))))));
   } else if (command === 'make' && first && rest.length >= 1) {
     const { makeFile, makeOptions } = await import('./lib/files.mjs');
     const file = await makeFile(first, rest[0], makeOptions(rest.slice(1)));
@@ -86,7 +97,7 @@ async function main(args) {
     const options = sendOptions(rest.slice(1));
     printResponse(await sendRequest(first, rest[0], options), options.headers);
   } else {
-    throw new Error('Usage: node scripts/break-it.mjs check <project> [--url URL] | copy <project> [--skip] | seal <run-id> | scan <run-id> | mask | cleanup <run-id> | report <run-id> <findings.json> | make <run-id> <kind> [--mb N] | upload <run-id> <POST|PUT> <URL> --file <made-file> [--field name] [--type content-type] [--name preset] [--token bearer] | send <METHOD> <URL> [--json <body>] [--token <bearer>] [--jar <run-id>] [--headers] [--forge <kind>] | sessions <run-id> POST <URL> --json <body> (--field <key> | --cookie-name <name>) [--count N] | net <run-id> <kind> <METHOD> <URL> --probe <URL> [--json <body> | --file <made-file>] [--token <bearer>] [--seconds N] | load <METHOD> <URL> [--requests N] [--concurrency C] [--duration S] [--json <body>] [--token <bearer>]');
+    throw new Error('Usage: node scripts/break-it.mjs check <project> [--url URL] | copy <project> [--skip] | seal <run-id> | scan <run-id> | mask | cleanup <run-id> | report <run-id> <findings.json> | make <run-id> <kind> [--mb N] | upload <run-id> <POST|PUT> <URL> --file <made-file> [--field name] [--type content-type] [--name preset] [--token bearer] [--jar <run-id>] | send <METHOD> <URL> [--json <body>] [--token <bearer>] [--jar <run-id>] [--keep-field <key>] [--hold] [--headers] [--forge <kind>] | sessions <run-id> POST <URL> --json <body> (--field <key> | --cookie-name <name>) [--count N] | net <run-id> <kind> <METHOD> <URL> --probe <URL> [--json <body> | --file <made-file>] [--token <bearer>] [--jar <run-id>] [--seconds N] | load <METHOD> <URL> [--requests N] [--concurrency C] [--duration S] [--json <body>] [--token <bearer>] [--jar <run-id>]');
   }
 }
 main(process.argv.slice(2)).catch(error => {

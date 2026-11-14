@@ -37,7 +37,9 @@ export function maskLoginValues(text, { cut = false } = {}) {
           changed = true;
         } else if (typeof value[key] === 'string') {
           const raw = value[key];
-          for (const secret of known) value[key] = value[key].split(secret).join(`•••• (${secret.length} chars)`);
+          for (const secret of [...known].sort((a, b) => b.length - a.length)) {
+            value[key] = value[key].split(secret).join(`•••• (${secret.length} chars)`);
+          }
           changed ||= value[key] !== raw;
         } else mask(value[key]);
       }

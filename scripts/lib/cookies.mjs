@@ -6,6 +6,13 @@ import { readSeal } from './runs.mjs';
 const cookieName = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const cookieValue = /^[\x21-\x7e]*$/;
 const jarLimit = 128 * 1024;
+const localOrigin = /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/;
+
+function validBearer(bearer) {
+  return bearer && typeof bearer.origin === 'string' && localOrigin.test(bearer.origin) &&
+    typeof bearer.value === 'string' && bearer.value.length > 0 && bearer.value.length <= 4096 &&
+    /^[\x20-\x7e\x80-\xff]+$/.test(bearer.value);
+}
 
 export function parseSetCookie(raw) {
   if (typeof raw !== 'string') return undefined;
@@ -23,7 +30,7 @@ export function formatSetCookie(raw) {
     'Set-Cookie: (unparseable; value hidden)';
 }
 function validStored(cookie) {
-  return cookie && typeof cookie.origin === 'string' && /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(cookie.origin) &&
+  return cookie && typeof cookie.origin === 'string' && localOrigin.test(cookie.origin) &&
     typeof cookie.name === 'string' && cookieName.test(cookie.name) && typeof cookie.value === 'string' &&
     cookieValue.test(cookie.value) && !cookie.value.includes(';') &&
     typeof cookie.path === 'string' && cookie.path.startsWith('/') && cookie.path.length <= 4096 &&
@@ -54,7 +61,9 @@ export async function readJar(id) {
     if (!sameFile(await handle.stat(), info)) throw new Error('Refused: cookie jar changed while opening.');
     let jar;
     try { jar = JSON.parse(await handle.readFile('utf8')); } catch { throw new Error('Refused: invalid cookie jar.'); }
-    if (jar?.version !== 1 || !Array.isArray(jar.cookies) || jar.cookies.length > 20 || !jar.cookies.every(validStored)) {
+    if (jar?.version !== 1 || !Array.isArray(jar.cookies) || jar.cookies.length > 20 || !jar.cookies.every(validStored) ||
+        jar.bearers !== undefined && (!Array.isArray(jar.bearers) || jar.bearers.length > 20 ||
+          !jar.bearers.every(validBearer) || new Set(jar.bearers.map(b => b.origin)).size !== jar.bearers.length)) {
       throw new Error('Refused: invalid cookie jar; at most 20 cookies of 4 KiB each.');
     }
     return jar;
@@ -62,8 +71,18 @@ export async function readJar(id) {
 }
 export function matchingCookies(jar, url) {
   return jar.cookies.filter(cookie => cookie.origin === url.origin &&
-    (cookie.expires === null || cookie.expires > Date.now()) && (!cookie.secure || url.protocol === 'https:') &&
+    (cookie.expires === null || cookie.expires > Date.now()) &&
     (url.pathname === cookie.path || url.pathname.startsWith(cookie.path.endsWith('/') ? cookie.path : cookie.path + '/')));
+}
+export function matchingBearer(jar, url) {
+  return jar.bearers?.find(bearer => bearer.origin === url.origin)?.value;
+}
+export function keepBearer(jar, url, value) {
+  const bearer = { origin: url.origin, value };
+  if (!validBearer(bearer)) throw new Error('Refused: login value is not a bounded HTTP header value.');
+  const bearers = [...(jar.bearers ?? []).filter(item => item.origin !== url.origin), bearer];
+  if (bearers.length > 20) throw new Error('Refused: cookie jar exceeds 20 bearer origins.');
+  return { ...jar, bearers };
 }
 export function updateJar(jar, url, headers = []) {
   const cookies = jar.cookies.filter(cookie => cookie.expires === null || cookie.expires > Date.now());
@@ -90,7 +109,7 @@ export function updateJar(jar, url, headers = []) {
     if (cookie.expires === null || cookie.expires > Date.now()) cookies.push(cookie);
     if (cookies.length > 20) throw new Error('Refused: cookie jar exceeds 20 cookies.');
   }
-  return { version: 1, cookies };
+  return { ...jar, version: 1, cookies };
 }
 export async function writeJar(id, jar) {
   const { file, info } = await jarFile(id);

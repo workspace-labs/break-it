@@ -82,7 +82,7 @@ test('jar enforces twenty cookies and four KiB per cookie without partial writes
   assert.equal(JSON.parse(await readFile(path.join(run.dir, 'jar.json'))).cookies.length, 20);
 });
 
-test('jar respects path, expiry and secure restrictions without broadening Domain', async t => {
+test('jar respects path and expiry and allows Secure on localhost without broadening Domain', async t => {
   const run = newRun(t, await project(t));
   const seen = [];
   const url = await server(t, (req, res) => {
@@ -93,8 +93,8 @@ test('jar respects path, expiry and secure restrictions without broadening Domai
   await sendRequest('POST', `${url}/login`, { jar: run.id });
   await sendRequest('GET', `${url}/public`, { jar: run.id });
   await sendRequest('GET', `${url}/private/a`, { jar: run.id });
-  assert.equal(seen[1], 'same=local');
-  assert.equal(seen[2], 'private=yes; same=local');
+  assert.equal(seen[1], 'secure=only; same=local');
+  assert.equal(seen[2], 'private=yes; secure=only; same=local');
 });
 
 test('Set-Cookie formatter fully masks every value and preserves flags byte for byte', () => {

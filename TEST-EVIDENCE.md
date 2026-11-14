@@ -1076,3 +1076,97 @@ privacy, G-smoke, audit and preservation artifacts plus the implementation plan.
 socket lifecycle and cleanup/report workflow remain untested there. Sampling
 is bounded heuristic evidence, not proof of randomness. Existing local-copy
 isolation and same-user filesystem-race limits remain. Claude review is next.
+
+
+### 0.7.0 fix round 1 — hidden login reuse and reliable G controls (2026-11-14)
+
+Codex builder; F1–F3 corrected and delivered for Claude's independent re-review,
+not acceptance. Started on clean main at
+`756ddb662d4307d0e4827f8c735871a639686e55`. Before edits, Node **22.23.1**
+passed **597/597** in **61.939 s**. The exact source is archived in the evidence
+directory. Version remains **0.7.0**; no dependency, remote Git or installation.
+
+Final full suites ran sequentially on macOS with each absolute runtime path and
+`--test`; all **597 existing tests + 26 additions** pass, zero failures, skips
+or cancellations:
+
+- Node **18.20.8**: **623/623**, **62.550 s**.
+- Node **20.20.2**: **623/623**, **61.469 s**.
+- Node **22.23.1**: **623/623**, **62.699 s**.
+
+The final source logs are **release-node18.log**, **release-node20.log** and
+**release-node22.log**. Earlier final-/verified-node logs are intermediate
+619/620-test runs before the additional output counterexamples were repaired.
+
+F1: `send --jar --keep-field` stores one hidden bearer per exact origin;
+`--hold` preserves jar values across logout cookie deletion. Upload/net/load
+use read-only jars, with invalid/conflicting authentication refused before
+measurement catch paths. Capture fixtures prove authenticated requests/probes,
+unchanged jar bytes, honest raw header byte counts, cookie/bearer controls and
+origin isolation. A narrow Latin-1 regression found that raw header encoding
+needed to match normal HTTP; only fixed header bytes change, never JSON bodies.
+Kept bearers remain covered by the existing post-cleanup fingerprint guard.
+
+The named-field reader privately captures at most **64 KiB** to support the
+specified **4096-character** field; the raw private body is deleted before
+return and display remains capped at **2 KiB**. Missing fields keep the old
+bearer unchanged and say no value was found. Invalid header values are refused
+without printing them. The bearer list is bounded to 20 origins inside the
+existing 128 KiB guarded jar. Forge plus keep-field is refused to preserve the
+one-request/no-write contract. Hold plus keep-field and missing-jar misuse are
+refused, as are explicit-token/matching-jar-bearer combinations.
+
+Output adversarial checks found a kept bearer echoed in a cookie Path, and
+valid Unicode escapes that bypassed literal substitution in complete or cut
+JSON. The bearer-only display scope now hides those echoes while ordinary
+cookie flags remain exact. The shared structured JSON masker now matches known
+values longest-first, like its existing textual pass, so an unrelated short
+cookie cannot partially overwrite a longer bearer before masking. Nothing
+else in that engine changed. Retained tests cover complete escaped strings,
+3000 escaped characters in login AND protected replies, partial prefixes,
+unrelated one-character cookies, exact flags/notices and correct typed-token
+length. The final focused privacy/jar checks passed **39/39**.
+
+F2: Secure cookies are sent to the allowed localhost hosts, retaining exact
+origin, Domain, path, expiry, count/size and link walls. G06 still judges Secure
+from production code, never localhost HTTP. F3: made-up retains separators and
+per-position digit/letter case; one-char targets the last alphanumeric and wraps
+hex f to 0. UUID-shaped forgeries reach the deliberately format-only fixture.
+Separator-only values refuse because they cannot differ with separators fixed.
+JWT-specific forge branches are byte-identical to the baseline.
+
+New test files contain 10 jar/bearer/hold tests, five auxiliary-command tests,
+three shape tests, four exact-document shop tests, one cookie-attribute privacy
+test, and three escaped-bearer tests. RED was observed before each correction;
+logs include jar-login-red, jar-commands-red, forge-red, shop-hold-red,
+latin1-red, kept-output-red and kept-escaped-red. A first generic header-mask
+attempt failed the existing exact-cookie-flags test; the bearer-only scope
+preserves that assertion. The only existing test adaptations are the required
+Secure-cookie expectation and filling the existing F01 doc-test setup jar.
+No test or safety assertion was removed, skipped or weakened.
+
+Real `node scripts/demo-shop.mjs --write`: **4.02 s**, counts unchanged:
+**34 tried / 11 blocked / 23 findings → 34 / 34 / 0**. Shop logout clears the
+cookie in both rounds; G01 now uses a held jar and distinguishes retained
+server sessions (200) from revoked sessions (401). Four regressions extract
+and execute the actual G01 commands in attacks-login.md. Answers/report anchors
+are updated. Original A–F outcomes and G02 controls remain.
+
+A builder-team CLI walkthrough used two guarded run jars against the SAME
+first-copy origin for G05: **8 tries / 2 blocked / 6 G findings**, **1.211 s**.
+G01 holds byte-identical jar despite Max-Age=0; controls pass before/after;
+both seals pass; both owned runs and receipts disappear. Five additional
+custom-field probes passed, including spaces/slash in the field name, an own
+__proto__ key, numeric fields, a 4096-character value and cookie-attribute echo.
+These are builder checks, not Claude's independent verdict.
+
+All six tracked docs/ files and package.json are byte-identical. Session
+sampling, reporting/fingerprints, leak detection, copy/seal/cleanup/target and
+walls tests are unchanged. Static skill audits under break-it retain the same
+four existing notices with zero structural errors. Documentation walls/version
+checks passed **8/8** after the final prose edits. Evidence and backup:
+`/private/tmp/break-it-070-fix1-evidence/` (plan, baseline archive, RED/GREEN,
+release-node suites, G CLI smoke, demo, audits and preservation.json).
+**Windows was not run**: suites, paths/link safety, HTTP/socket lifecycle,
+Latin-1 handling and cleanup/report flow remain unverified there. Installed
+skills were not updated; local commit only. Next gate: Claude re-review.

@@ -5,13 +5,55 @@ import { performance } from 'node:perf_hooks';
 import { StringDecoder } from 'node:string_decoder';
 import { Readable } from 'node:stream';
 import { checkUrl } from './target.mjs';
-import { readJar, writeJar, matchingCookies, updateJar, parseSetCookie } from './cookies.mjs';
+import { readJar, writeJar, matchingCookies, matchingBearer, keepBearer, updateJar, parseSetCookie } from './cookies.mjs';
 import { forgeLoginValue, validateForge } from './login-forge.mjs';
 import { rememberLoginValue, rememberRunLoginValue } from './login-values.mjs';
 export { parseSetCookie, formatSetCookie } from './cookies.mjs';
 
 const bodyLimit = 64 * 1024;
 const outputLimit = 2 * 1024;
+
+// Only bearer values belong in this display scope. A short unrelated cookie
+// value must not rewrite ordinary flag names or values such as SameSite=Lax.
+const bearerValues = new Set();
+function rememberBearerValue(value) {
+  rememberLoginValue(value);
+  if (typeof value === 'string' && value.length) bearerValues.add(value);
+}
+export function maskBearerValues(text, { cut = false } = {}) {
+  const values = [...bearerValues].sort((a, b) => b.length - a.length);
+  const replace = text => {
+    for (const value of values) text = text.split(value).join(`•••• (${value.length} chars)`);
+    return text;
+  };
+  // JSON permits noncanonical Unicode escapes. Decode string tokens before
+  // matching; a cut token can also end halfway through its final escape.
+  let output = String(text).replace(/"((?:[^"\\]|\\.)*)(?:(")|(\\)?$)/g, (whole, inner, closed) => {
+    if (!closed && !cut) return whole;
+    let decoded;
+    for (let trim = 0; trim <= (closed ? 0 : Math.min(5, inner.length)); trim++) {
+      try { decoded = JSON.parse(`"${inner.slice(0, inner.length - trim)}"`); break; }
+      catch { /* Only a bounded incomplete escape suffix is discarded. */ }
+    }
+    if (decoded === undefined) return whole;
+    const masked = replace(decoded);
+    if (masked !== decoded) return JSON.stringify(masked);
+    if (!closed) for (const value of values) {
+      for (let length = Math.min(value.length - 1, decoded.length); length > 0; length--) {
+        if (decoded.endsWith(value.slice(0, length))) {
+          return JSON.stringify(decoded.slice(0, -length) + '•••• (cut login value)');
+        }
+      }
+    }
+    return whole;
+  });
+  for (const value of values) {
+    for (const spelling of new Set([value, JSON.stringify(value).slice(1, -1)])) {
+      output = output.split(spelling).join(`•••• (${value.length} chars)`);
+    }
+  }
+  return output;
+}
 
 function boundedText(buffer) {
   // Do not print half a UTF-8 character at the boundary. Re-encode invalid input
@@ -34,21 +76,20 @@ export function validateRequest(method, input, { json, token } = {}) {
   return url;
 }
 
-export async function sendRequest(method, input, { json, token, signal, jar, forge } = {}) {
+export async function resolveLogin(method, input, { json, token, jar, forge } = {}) {
   const url = validateRequest(method, input, { json, token });
   validateForge(forge);
   const stored = jar === undefined ? undefined : await readJar(jar);
   const cookies = stored ? matchingCookies(stored, url) : [];
-  if (forge && token === undefined && !cookies.length) throw new Error('Refused: forge needs a login value from --token or --jar.');
-  const headers = { Host: url.host };
-  if (json !== undefined) {
-    headers['Content-Type'] = 'application/json';
-    headers['Content-Length'] = Buffer.byteLength(json);
-  }
-  if (token !== undefined) {
-    rememberLoginValue(token);
-    const sent = forge ? forgeLoginValue(token, forge) : token;
-    rememberLoginValue(sent);
+  const bearer = stored ? matchingBearer(stored, url) : undefined;
+  if (token !== undefined && bearer !== undefined) throw new Error('Refused: --token cannot be combined with a jar bearer for this origin.');
+  const value = token ?? bearer;
+  if (forge && value === undefined && !cookies.length) throw new Error('Refused: forge needs a login value from --token or --jar.');
+  const headers = {};
+  if (value !== undefined) {
+    rememberBearerValue(value);
+    const sent = forge ? forgeLoginValue(value, forge) : value;
+    rememberBearerValue(sent);
     headers.Authorization = `Bearer ${sent}`;
   }
   if (cookies.length) headers.Cookie = cookies.map(cookie => {
@@ -57,23 +98,72 @@ export async function sendRequest(method, input, { json, token, signal, jar, for
     rememberLoginValue(sent);
     return `${cookie.name}=${sent}`;
   }).join('; ');
-  const response = await requestOnce(method, url, { headers, json, signal });
+  return { url, headers, stored, cookies, bearer };
+}
+
+function validateJarOptions({ jar, hold, keepField, readOnlyJar }) {
+  if ((hold || keepField !== undefined) && jar === undefined) throw new Error('Refused: --hold and --keep-field require --jar.');
+  if (hold && keepField !== undefined) throw new Error('Refused: --hold cannot be combined with --keep-field.');
+  if (readOnlyJar && (hold || keepField !== undefined)) throw new Error('Refused: read-only jar requests cannot keep reply values.');
+  if (keepField !== undefined && (typeof keepField !== 'string' || !keepField.length || keepField.length > 256 ||
+      /[\x00-\x1f\x7f]/.test(keepField))) throw new Error('Refused: --keep-field requires a field name of 1–256 characters without controls.');
+}
+
+export async function sendRequest(method, input, options = {}) {
+  const { json, token, signal, jar, forge, hold, keepField, readOnlyJar = false } = options;
+  validateJarOptions(options);
+  if (forge && keepField !== undefined) throw new Error('Refused: --forge cannot be combined with --keep-field.');
+  const { url, headers: loginHeaders, stored, cookies } = await resolveLogin(method, input, { json, token, jar, forge });
+  const headers = { Host: url.host, ...loginHeaders };
+  if (json !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    headers['Content-Length'] = Buffer.byteLength(json);
+  }
+  const response = await requestOnce(method, url, { headers, json, signal, captureLogin: keepField !== undefined });
   const received = response.headers['set-cookie'] ?? [];
   for (const raw of received) {
     const cookie = parseSetCookie(raw);
     if (cookie) rememberLoginValue(cookie.value);
   }
-  if (stored && !forge) {
-    const updated = updateJar(stored, url, received);
-    for (const cookie of [...cookies, ...updated.cookies]) if (cookie.value) await rememberRunLoginValue(jar, cookie.value);
-    if (received.length) await writeJar(jar, updated);
+  let kept;
+  let keepValue;
+  if (keepField !== undefined) {
+    let parsed;
+    try {
+      if (response.privateLoginBody !== undefined) parsed = JSON.parse(response.privateLoginBody);
+      else if (!response.cut) parsed = JSON.parse(response.body);
+    } catch { /* No complete JSON field to keep. */ }
+    const field = parsed && typeof parsed === 'object' && Object.hasOwn(parsed, keepField) ? parsed[keepField] : undefined;
+    if (typeof field === 'string' || typeof field === 'number' && Number.isFinite(field)) {
+      const value = String(field);
+      rememberBearerValue(value);
+      if (value.length > 0 && value.length <= 4096) {
+        // Check header safety without exposing parser input or a partial value.
+        keepBearer(stored, url, value);
+        keepValue = value;
+      }
+    }
+    kept = { key: keepField, length: keepValue?.length };
+    // A cut or malformed custom JSON field cannot be safely identified by the
+    // general display masker. Keep that incomplete reply out of CLI output.
+    if (parsed === undefined) response.body = '(login reply hidden; incomplete JSON)';
   }
-  return { ...response, ...(forge ? { forged: forge } : {}) };
+  delete response.privateLoginBody;
+  if (stored && !forge && !hold && !readOnlyJar) {
+    let updated = updateJar(stored, url, received);
+    if (keepValue !== undefined) {
+      updated = keepBearer(updated, url, keepValue);
+      await rememberRunLoginValue(jar, keepValue);
+    }
+    for (const cookie of [...cookies, ...updated.cookies]) if (cookie.value) await rememberRunLoginValue(jar, cookie.value);
+    if (received.length || keepValue !== undefined) await writeJar(jar, updated);
+  }
+  return { ...response, ...(forge ? { forged: forge } : {}), ...(hold ? { held: true } : {}), ...(kept ? { kept } : {}) };
 }
 
 // Both JSON and file requests use this single transport. No DNS, proxy,
 // redirect or retry path is available to either caller.
-function requestOnce(method, url, { headers, json, source, signal, deadline = 5000 }) {
+function requestOnce(method, url, { headers, json, source, signal, deadline = 5000, captureLogin = false }) {
   // Pin localhost to a literal loopback address; never consult DNS or proxies.
   const hostname = url.hostname === '[::1]' ? '::1' : '127.0.0.1';
   const transport = url.protocol === 'https:' ? https : http;
@@ -114,16 +204,19 @@ function requestOnce(method, url, { headers, json, source, signal, deadline = 50
         source?.destroy();
         const chunks = [];
         let size = 0;
+        const captureLimit = captureLogin ? bodyLimit : outputLimit;
         const result = cut => {
-          const display = boundedText(Buffer.concat(chunks));
+          const captured = Buffer.concat(chunks);
+          const display = boundedText(captured);
           return { status: res.statusCode, body: display.body, cut: cut || display.cut,
+            ...(captureLogin && !cut ? { privateLoginBody: captured.toString('utf8') } : {}),
             ...(source ? { sentBytes } : {}),
             headers: Object.fromEntries(['content-type', 'content-disposition', 'content-security-policy', 'set-cookie']
               .filter(key => res.headers[key] !== undefined).map(key => [key, res.headers[key]])) };
         };
         res.on('data', chunk => {
           if (settled) return;
-          const remaining = outputLimit - size;
+          const remaining = captureLimit - size;
           chunks.push(chunk.subarray(0, remaining));
           size += Math.min(chunk.length, remaining);
           if (chunk.length > remaining) {
@@ -151,17 +244,17 @@ function requestOnce(method, url, { headers, json, source, signal, deadline = 50
 
 // Only upload.mjs prepares file bodies. Validate its independently computed
 // length here as well, so transport can never send a body above 51 MiB.
-export function sendFileRequest(method, input, { source, length, boundary, token, big = false }) {
+export function sendFileRequest(method, input, { source, length, boundary, token, jar, big = false }) {
   const url = validateRequest(method, input, { token });
   if (!/^(POST|PUT)$/.test(method) || !Number.isSafeInteger(length) || length < 0 || length > 51 * 1024 * 1024) {
     throw new Error('Refused: upload requires POST or PUT and at most 51 MiB total.');
   }
   if (!/^[a-zA-Z0-9-]{1,80}$/.test(boundary)) throw new Error('Refused: invalid multipart boundary.');
-  const headers = { Host: url.host, 'Content-Type': `multipart/form-data; boundary=${boundary}`,
+  return resolveLogin(method, input, { token, jar }).then(({ headers: loginHeaders }) => {
+  const headers = { Host: url.host, ...loginHeaders, 'Content-Type': `multipart/form-data; boundary=${boundary}`,
     'Content-Length': length, Connection: 'keep-alive' };
   // Let early refusals arrive before the server closes with unread input.
   // agent:false and finish() still make this a single-use socket, never a pool.
-  if (token !== undefined) headers.Authorization = `Bearer ${token}`;
   const bounded = Readable.from((async function* () {
     let sent = 0;
     try {
@@ -178,17 +271,19 @@ export function sendFileRequest(method, input, { source, length, boundary, token
     } finally { source.destroy(); }
   })());
   return requestOnce(method, url, { headers, source: bounded, deadline: big === true ? 30000 : 5000 });
+  });
 }
 
 export function sendOptions(args) {
   const options = {};
   for (let i = 0; i < args.length; i += 2) {
-    if (args[i] === '--headers' && options.headers === undefined) {
-      options.headers = true;
+    const boolean = args[i] === '--headers' ? 'headers' : args[i] === '--hold' ? 'hold' : undefined;
+    if (boolean && options[boolean] === undefined) {
+      options[boolean] = true;
       i--;
       continue;
     }
-    const keys = { '--json': 'json', '--token': 'token', '--jar': 'jar', '--forge': 'forge' };
+    const keys = { '--json': 'json', '--token': 'token', '--jar': 'jar', '--forge': 'forge', '--keep-field': 'keepField' };
     const key = Object.hasOwn(keys, args[i]) ? keys[args[i]] : undefined;
     if (!key || i + 1 >= args.length || options[key] !== undefined) {
       throw new Error('Refused: send accepts one --json body and one --token bearer.');
@@ -196,23 +291,24 @@ export function sendOptions(args) {
     options[key] = args[i + 1];
   }
   validateForge(options.forge);
+  validateJarOptions(options);
   return options;
 }
 
 // The raw transport has no caller-supplied wire format: only these eight shapes.
 const garbageBytes = Buffer.alloc(64, 0xff);
-function badRequestShape(kind, method, url, { length, type, boundary, token }) {
+function badRequestShape(kind, method, url, { length, type, boundary, headers = {} }) {
   const line = `${method.toUpperCase()} ${url.pathname + url.search} HTTP/1.1\r\n`;
   const host = `Host: ${url.host}\r\n`;
-  const auth = token === undefined ? '' : `Authorization: Bearer ${token}\r\n`;
+  const auth = Object.entries(headers).map(([name, value]) => `${name}: ${value}\r\n`).join('');
   if (kind === 'garbage') return { headers: garbageBytes, length: 0 };
-  if (kind === 'bad-header') return { headers: Buffer.from(line + host + auth + 'Broken-Header\r\n\r\n'), length: 0 };
-  if (kind === 'huge-header') return { headers: Buffer.from(line + host + auth + `X-Filler: ${'a'.repeat(32768)}\r\n\r\n`), length: 0 };
+  if (kind === 'bad-header') return { headers: Buffer.from(line + host + auth + 'Broken-Header\r\n\r\n', 'latin1'), length: 0 };
+  if (kind === 'huge-header') return { headers: Buffer.from(line + host + auth + `X-Filler: ${'a'.repeat(32768)}\r\n\r\n`, 'latin1'), length: 0 };
   if (kind === 'two-lengths') return { headers: Buffer.from(line + host + auth +
-    'Content-Length: 1\r\nContent-Length: 2\r\n\r\nx'), length: 0 };
+    'Content-Length: 1\r\nContent-Length: 2\r\n\r\nx', 'latin1'), length: 0 };
   const contentType = boundary ? `multipart/form-data; boundary=${boundary}` : type;
   return { headers: Buffer.from(line + host + auth +
-    (contentType ? `Content-Type: ${contentType}\r\n` : '') + `Content-Length: ${length}\r\n\r\n`), length };
+    (contentType ? `Content-Type: ${contentType}\r\n` : '') + `Content-Length: ${length}\r\n\r\n`, 'latin1'), length };
 }
 
 // Incremental HTTP reply reader: bounded headers, bounded body and chunk framing.
@@ -303,7 +399,8 @@ export function sendBadConnection(kind, method, input, options) {
   if (!Number.isSafeInteger(options.length) || options.length < 0 || options.length > 51 * 1024 * 1024) {
     throw new Error('Refused: net body exceeds 51 MiB.');
   }
-  const shape = badRequestShape(kind, method, url, options);
+  return resolveLogin(method, input, { token: options.token, jar: options.jar }).then(({ headers }) => {
+  const shape = badRequestShape(kind, method, url, { ...options, headers });
   const held = kind === 'slow' || kind === 'short';
   const milliseconds = Math.max(0, Math.min(held ? options.seconds * 1000 : 5000, 30000,
     options.deadline - performance.now()));
@@ -392,5 +489,6 @@ export function sendBadConnection(kind, method, input, options) {
         // F05 waits for the app's reply/close or the fixed five-second ceiling.
       } catch { finish('reset'); }
     });
+  });
   });
 }

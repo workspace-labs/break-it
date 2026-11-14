@@ -35,7 +35,7 @@ for (const repaired of [false, true]) {
     }
     app = await startShop(copy);
     const base = `http://127.0.0.1:${app.port}`;
-    const login = await sendRequest('POST', `${base}/login`, { json: JSON.stringify({ user: 'A', password: 'example-a' }) });
+    const login = await sendRequest('POST', `${base}/login`, { jar: id, json: JSON.stringify({ user: 'A', password: 'example-a' }) });
     assert.equal(login.status, 200);
     const token = JSON.parse(login.body).session;
     const reference = await readFile(path.join(root, 'references/attacks-network.md'), 'utf8');

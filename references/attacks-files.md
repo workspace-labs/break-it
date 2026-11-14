@@ -51,14 +51,16 @@ These are fixed kinds, not paths or user-supplied content:
 
 ```text
 node scripts/break-it.mjs make <run-id> normal-png
-node scripts/break-it.mjs upload <run-id> POST http://localhost:4000/upload --file normal.png --token LOCAL_TEST_SESSION
+node scripts/break-it.mjs upload <run-id> POST http://localhost:4000/upload --file normal.png --jar <run-id>
 ```
 
 Each upload is one multipart request with one file part, streamed from disk.
 Only POST and PUT are accepted. `--file` is a bare made filename inside that
 run's `files/` folder: no slash, backslash or `..`. Arbitrary files, including
 symbolic-link substitutes, are refused. Optional `--field` defaults to `file`;
-`--type` changes the claimed content type for E02. `--token` follows `send`'s
+`--type` changes the claimed content type for E02. `--jar` reads the login
+kept by send (cookies or --keep-field bearer), without writing the jar.
+`--token` is only an owner's fixed test key and follows `send`'s
 bearer rules. The body including multipart framing is capped at 51 MiB.
 The localhost, literal-loopback, no-redirect and no-retry walls remain. The
 upload allows the server to keep the connection open for its reply, then closes
@@ -128,7 +130,7 @@ crash or outage; never escalate or repeat a damaging try.
   bounded response headers as well as its body:
 
   ```text
-  node scripts/break-it.mjs send GET http://localhost:4000/uploads/marker.html --headers --token LOCAL_TEST_SESSION
+  node scripts/break-it.mjs send GET http://localhost:4000/uploads/marker.html --headers --jar <run-id>
   ```
 
   Check Content-Type, Content-Disposition and Content-Security-Policy. The optional
@@ -168,7 +170,7 @@ crash or outage; never escalate or repeat a damaging try.
 
 - **Send:** User A uploads `normal-png`. Establish that the resulting file is
   private to A and that A can read it with `send GET`. Then request the same
-  known local address as invented user B with `--token`, and without a token.
+  known local address as invented user B with B's `--jar`, and without a login.
   Do not enumerate filenames.
 - **BLOCKED:** B and the unauthenticated request get no A-private file bytes;
   A's allowed read still works.
@@ -188,8 +190,8 @@ crash or outage; never escalate or repeat a damaging try.
   copy:
 
   ```text
-  node scripts/break-it.mjs send GET http://localhost:4000/uploads/..%2Fserver.mjs --token LOCAL_TEST_SESSION
-  node scripts/break-it.mjs send GET http://localhost:4000/uploads/%2E%2E%2Fserver.mjs --token LOCAL_TEST_SESSION
+  node scripts/break-it.mjs send GET http://localhost:4000/uploads/..%2Fserver.mjs --jar <run-id>
+  node scripts/break-it.mjs send GET http://localhost:4000/uploads/%2E%2E%2Fserver.mjs --jar <run-id>
   ```
 
   Never aim outside the copy or ask for system files. Do not add another parent

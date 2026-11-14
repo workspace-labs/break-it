@@ -157,6 +157,7 @@ const server = http.createServer({
     const user = activeSession(token)?.user;
     if (!user) return send(res, 401, { error: 'Log in first' });
     if (req.method === 'POST' && url.pathname === '/logout') {
+      res.setHeader('Set-Cookie', 'shop_session=; Path=/; Max-Age=0');
       if (invalidateLogout) sessions.delete(token);
       return send(res, 200, { loggedOut: true });
     }

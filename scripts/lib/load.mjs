@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import { setMaxListeners } from 'node:events';
-import { sendRequest, validateRequest } from './send.mjs';
+import { sendRequest, resolveLogin } from './send.mjs';
 
 const limits = { requests: 2000, concurrency: 50, duration: 30 };
 const defaults = { requests: 200, concurrency: 10, duration: 30 };
@@ -13,8 +13,8 @@ function boundedOptions(input) {
     }
   }
   for (const name of Object.keys(input)) {
-    if (!(Object.hasOwn(limits, name) || name === 'json' || name === 'token')) {
-      throw new Error('Refused: load accepts only --requests, --concurrency, --duration, --json and --token.');
+    if (!(Object.hasOwn(limits, name) || name === 'json' || name === 'token' || name === 'jar')) {
+      throw new Error('Refused: load accepts only --requests, --concurrency, --duration, --json, --token and --jar.');
     }
   }
   return options;
@@ -25,9 +25,9 @@ export function loadOptions(args) {
   for (let i = 0; i < args.length; i += 2) {
     const flag = args[i];
     const name = typeof flag === 'string' && flag.startsWith('--') ? flag.slice(2) : '';
-    if (!(Object.hasOwn(limits, name) || name === 'json' || name === 'token') ||
+    if (!(Object.hasOwn(limits, name) || name === 'json' || name === 'token' || name === 'jar') ||
         i + 1 >= args.length || Object.hasOwn(options, name)) {
-      throw new Error('Refused: load accepts one each of --requests, --concurrency, --duration, --json and --token.');
+      throw new Error('Refused: load accepts one each of --requests, --concurrency, --duration, --json, --token and --jar.');
     }
     const value = args[i + 1];
     if (Object.hasOwn(limits, name)) {
@@ -44,7 +44,7 @@ export function loadOptions(args) {
 // five-second deadline. All request validation stays at the send boundary.
 export async function runLoad(method, input, inputOptions = {}) {
   const options = boundedOptions(inputOptions);
-  try { validateRequest(method, input, options); }
+  try { await resolveLogin(method, input, options); }
   catch (error) {
     throw new Error(error.message.startsWith('Refused:') ? error.message : `Refused: ${error.message}`);
   }
@@ -62,7 +62,7 @@ export async function runLoad(method, input, inputOptions = {}) {
       summary.sent++;
       const started = performance.now();
       try {
-        const response = await sendRequest(method, input, { ...options, signal: controller.signal });
+        const response = await sendRequest(method, input, { ...options, readOnlyJar: true, signal: controller.signal });
         summary.completed++;
         times.push(performance.now() - started);
         const group = response.status >= 200 && response.status < 300 ? '2xx' :
@@ -95,7 +95,7 @@ export async function runLoad(method, input, inputOptions = {}) {
       p95: times[Math.ceil(times.length * 0.95) - 1], max: times.at(-1) };
   }
   try {
-    const response = await sendRequest(method, input, options);
+    const response = await sendRequest(method, input, { ...options, readOnlyJar: true });
     summary.afterBurst = { status: response.status };
   } catch { /* A failed recovery probe is a measurement, never a CLI refusal. */ }
   return summary;

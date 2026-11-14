@@ -19,8 +19,9 @@ saved in findings: show only its name, length, flags or pattern, never any of it
 characters. Never send it anywhere except that copy's localhost port.
 
 - **Send:** A correct login, then a request to a route that requires that login.
-  Use `send --jar <run-id>` to retain cookies inside the guarded run, without
-  viewing the jar. Repeat a correct login/session control after the family.
+  Use `send --jar <run-id>` for cookies or add `--keep-field <json key>` for a
+  JSON bearer, without viewing the jar. Repeat a correct login/session control
+  after the family.
 - **BLOCKED:** Both controls answer normally as the disposable user.
 - **HOLE:** None for a passing control. Stop if login or the protected route
   fails; record the incomplete observation instead of inventing a finding.
@@ -29,13 +30,15 @@ characters. Never send it anywhere except that copy's localhost port.
 Run G last among the per-request families: logout and password changes alter
 state. Keep a per-user login budget: count A09 and G03 logins together against
 the same disposable user, and stop at any lockout. Never bypass a lockout.
-Do not paste a bearer into a tool transcript. Prefer the cookie jar; a
-programmatic bearer flow must keep response values in memory and use
-`sendRequest` only. The CLI deliberately masks JSON login fields.
+Do not paste a login response value into a tool transcript. `--token` is only
+for a fixed test key the owner gives you. Otherwise log in using `--jar` for a
+cookie app or `--jar --keep-field <json key>` for a bearer app, then use `--jar`
+on later send/upload/net/load commands. The CLI deliberately masks login fields.
 
 ```text
 node scripts/break-it.mjs send POST http://localhost:4000/login --jar <run-id> --json '{"user":"A","password":"invented"}' --headers
 node scripts/break-it.mjs send GET http://localhost:4000/account --jar <run-id>
+node scripts/break-it.mjs send POST http://localhost:4000/login --jar <run-id> --keep-field token --json '{"user":"A","password":"invented"}'
 ```
 
 `--headers` masks every Set-Cookie value, even a short harmless-looking value,
@@ -44,14 +47,33 @@ incomplete evidence)` means unseen flags are unknown. Never read raw cookie
 files to fill that gap. `--jar` sends cookies only to the exact localhost
 host:port that issued them, honors path/expiry, and never follows Domain to
 another host. At most 20 cookies, each at most 4 KiB; cleanup deletes the jar.
-There is no free-text cookie option.
+`--keep-field` retains one bearer per exact origin, replacing that origin's old
+bearer, and prints only its field name and length (or that no value was found).
+The field must contain a header-safe string or number of 1–4096 characters.
+A missing field leaves any old bearer unchanged; stop logged-in checks and
+choose the correct field if the notice says no login value. `--keep-field`
+requires `--jar`; `--token` plus a matching jar bearer is refused. There is
+no free-text cookie option. Break-it sends Secure cookies to its allowed
+localhost hosts; G06 still judges Secure from production code.
 
 ## G01: Logout does not log out
 
-- **Send:** Log in, use the app's logout route, then reuse the SAME old value
-  on a protected route. Preserve that old value in memory (or a separate
-  guarded run jar before logout); a logout response may clear the active jar.
-  Merely sending no cookie after logout does not test revocation.
+- **Send:** Log in with `--jar`, prove a protected request works, call logout
+  with `--jar --hold`, then reuse `--jar` on that protected route. `--hold`
+  sends the old cookies/bearer but does not apply the logout reply's Set-Cookie.
+  It requires `--jar` and refuses `--keep-field` together with it. Merely sending
+  no cookie after logout does not test revocation. For a bearer-only app add
+  `--keep-field <json key>` to the login command. Adapt routes and invented
+  credentials from the copy's code; these four commands are the shop example:
+
+  ```text
+  node scripts/break-it.mjs send POST http://localhost:4000/login --jar <run-id> --json '{"user":"A","password":"example-a"}'
+  node scripts/break-it.mjs send GET http://localhost:4000/safe-orders/1 --jar <run-id>
+  node scripts/break-it.mjs send POST http://localhost:4000/logout --jar <run-id> --hold
+  node scripts/break-it.mjs send GET http://localhost:4000/safe-orders/1 --jar <run-id>
+  ```
+
+  The second command must answer 200; the last must be refused after logout.
 - **BLOCKED:** The old value is refused as unauthenticated.
 - **HOLE:** The old value still works as the logged-in user.
 - **Severity:** CRITICAL. Skip with a reason if there is no logout route.
@@ -63,6 +85,9 @@ There is no free-text cookie option.
   `jwt-none` and `jwt-bad-sig`. Each forge affects one request only and is
   neither saved nor printed. A JWT has three base64url parts; its payload is
   never edited. JWT kinds refuse non-JWT values with a plain message.
+  Made-up preserves separators and each position's digit/letter case class;
+  one-char changes the last letter or digit, preserving trailing separators
+  and wrapping within its class (hex f wraps to 0).
 
   ```text
   node scripts/break-it.mjs send GET http://localhost:4000/account --jar <run-id> --forge one-char
@@ -109,7 +134,9 @@ There is no free-text cookie option.
 ## G05: New password, old login still works
 
 - **Send:** Only where the copy has a change-password route: log in twice,
-  keeping two values in memory or separate run jars. Change the disposable
+  keeping two separate run jars. A second throwaway copy gives a second jar
+  for the second session; send both logins to the same first copy's origin and
+  clean up both runs and their receipts. Change the disposable
   user's own password with one session, supplying its current password if
   required, then test the OTHER old value on a protected route. Use only an
   invented replacement password and track it for the final correct login.

@@ -90,7 +90,7 @@ Login values have a stricter rule than general secrets: no characters at all,
 only name, length, flags and patterns. Never save a bearer, cookie or sampled
 value in findings, including skipped text or project labels. The guard refuses
 known in-memory values and values matching the run's salted fingerprints from
-jar use or sessions samples, retained in the cleanup receipt without raw samples.
+jar cookies, explicitly kept bearers or sessions samples, retained in the cleanup receipt without raw samples.
 It refuses the report without printing that value or consuming the receipt.
 Never work around this by encoding a value. No pattern found is not proof of
 randomness, and rough strength is an upper bound, not an entropy measurement.

@@ -33,7 +33,9 @@ A `cancelled at deadline` count is break-it's own limit and is NEVER evidence of
 a hole; if you need those requests to finish, raise `--duration` (up to 30) and
 run again.
 
-Use `--json` and `--token` for a disposable request body/session when applicable;
+Use `--json` for a disposable request body and `--jar <run-id>` for the hidden
+login kept by send; load reads the jar without writing it. `--token` is only
+a fixed test key the owner supplies;
 the same body and bearer are reused for every request, including the probe. The
 whole UTF-8 body must fit within 64 KiB. `load` prints four bounded lines with
 sent/completed/failed/cancelled counts, status totals, latency for completed
