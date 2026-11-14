@@ -50,7 +50,13 @@ export async function runNet(id, kind, method, input, options = {}) {
     try {
       const response = await sendRequest('GET', options.probe, { token: options.token, signal });
       return { status: response.status, ms: performance.now() - start };
-    } catch { return { failed: true }; }
+    } catch (error) {
+      // sendRequest distinguishes our AbortSignal from its own timeout or a socket failure.
+      if (signal?.aborted && error.message === 'Refused: request stopped at the load deadline.') {
+        return { stopped: true };
+      }
+      return { failed: true };
+    }
   };
   let during;
   const execute = async body => {
@@ -71,7 +77,8 @@ export function formatNet(result) {
   const seconds = value => value.toFixed(3);
   const url = safeLabel(result.url).slice(0, 512);
   const method = result.method.slice(0, 32);
-  const app = result.outcome === 'answered' ? `answered ${result.response.status} after ${seconds(result.appSeconds)} s` :
+  const app = result.kind === 'leave' ? 'not observed (we left first)' :
+    result.outcome === 'answered' ? `answered ${result.response.status} after ${seconds(result.appSeconds)} s` :
     result.outcome === 'limit' ? `still open at our limit (${seconds(result.seconds)} s)` :
       `${result.outcome === 'reset' ? 'reset' : 'closed'} the connection after ${seconds(result.appSeconds)} s`;
   return [
@@ -79,7 +86,8 @@ export function formatNet(result) {
     `sent: ${result.sentBytes} of ${result.totalBytes} bytes over ${seconds(result.seconds)} s   we closed: ${result.weClosed ? 'yes' : 'no'}`,
     `app: ${app}`,
     `probe during: ${result.probeDuring === null ? 'n/a' : result.probeDuring.status ?
-      `app answered ${result.probeDuring.status} in ${result.probeDuring.ms.toFixed(1)} ms` : 'app did not answer'}`,
+      `app answered ${result.probeDuring.status} in ${result.probeDuring.ms.toFixed(1)} ms` :
+      result.probeDuring.stopped ? `stopped when the try ended after ${seconds(result.seconds)} s (not evidence)` : 'app did not answer'}`,
     `probe after: ${result.probeAfter.status ? `app answered ${result.probeAfter.status}` : 'app did not answer'}`,
   ].join('\n');
 }

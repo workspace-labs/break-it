@@ -458,7 +458,7 @@ test('net never-answering server returns by seconds plus final probe and leaves 
     '--probe', `${server.base}/health`, '--json', '{"long":"more than ten"}', '--seconds', '1');
   measured(result, 'short');
   assert.match(result.stdout, /still open at our limit/);
-  assert.match(result.stdout, /probe during: app did not answer/);
+  assert.match(result.stdout, /probe during: stopped when the try ended after [\d.]+ s \(not evidence\)/);
   assert.match(result.stdout, /probe after: app did not answer/);
   assert.ok(result.elapsed < 7000, `seconds + five-second probe: ${result.elapsed}`);
   await pause(30);
