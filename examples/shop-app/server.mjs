@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, open } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { API_KEY } from './config.mjs';
@@ -13,6 +13,7 @@ const orders = {
 };
 const attempts = new Map();
 const sessions = new Map();
+const notes = [];
 const catalogJobs = [];
 let catalogAvailable = true;
 const uploadsFolder = path.join(path.dirname(fileURLToPath(import.meta.url)), 'uploads');
@@ -56,7 +57,52 @@ async function uploadedPart(req, res, limited) {
   return { name, bytes: bytes.subarray(split + 4, end) };
 }
 
-const server = http.createServer(async (req, res) => {
+async function streamedPart(req, res, limited, user, safeNames) {
+  const boundary = /boundary=([^;]+)/.exec(req.headers['content-type'] || '')?.[1];
+  if (!boundary) { send(res, 400, { error: 'Multipart file required' }); return; }
+  if (limited && Number(req.headers['content-length']) > 1024 * 1024) {
+    send(res, 413, { error: 'File too large' }); return;
+  }
+  const suffix = Buffer.from(`\r\n--${boundary}--\r\n`);
+  let pending = Buffer.alloc(0), handle, name, size = 0, received = 0;
+  try {
+    for await (const chunk of req) {
+      received += chunk.length;
+      if (limited && received > 1024 * 1024) { send(res, 413, { error: 'File too large' }); return; }
+      pending = Buffer.concat([pending, chunk]);
+      if (!handle) {
+        const split = pending.indexOf('\r\n\r\n');
+        if (split < 0) {
+          if (pending.length > 4096) { send(res, 400, { error: 'Invalid file part' }); return; }
+          continue;
+        }
+        name = /filename="([^"]*)"/.exec(pending.subarray(0, split).toString('utf8'))?.[1];
+        if (!name) { send(res, 400, { error: 'Invalid file part' }); return; }
+        if (safeNames && (!/^[a-zA-Z0-9._-]{1,100}$/.test(name) || ['.', '..'].includes(name))) {
+          send(res, 400, { error: 'Invalid file name' }); return;
+        }
+        handle = await open(path.join(uploadsFolder, name), 'w');
+        uploadOwners.set(name, user);
+        pending = pending.subarray(split + 4);
+      }
+      const count = Math.max(0, pending.length - suffix.length);
+      if (count) { await handle.writeFile(pending.subarray(0, count)); size += count; }
+      pending = pending.subarray(count);
+    }
+    if (!handle || !pending.equals(suffix)) { send(res, 400, { error: 'Invalid file part' }); return; }
+    return { name, size, saved: true };
+  } catch (error) {
+    if (handle && pending.length) await handle.writeFile(pending);
+    throw error;
+  } finally { await handle?.close(); }
+}
+
+const boundedConnections = false;
+const server = http.createServer({
+  headersTimeout: boundedConnections ? 350 : 0,
+  requestTimeout: boundedConnections ? 600 : 0,
+  connectionsCheckingInterval: 50
+}, async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
     if (req.method === 'GET' && url.pathname === '/catalog') {
@@ -87,15 +133,17 @@ const server = http.createServer(async (req, res) => {
     if (!user) return send(res, 401, { error: 'Log in first' });
     if (req.method === 'POST' && url.pathname === '/upload') {
       const limitUploads = false;
-      const part = await uploadedPart(req, res, limitUploads);
-      if (!part) return;
+      const keepCompleteUploads = false;
       const safeUploadNames = false;
+      const part = keepCompleteUploads ? await uploadedPart(req, res, limitUploads)
+        : await streamedPart(req, res, limitUploads, user, safeUploadNames);
+      if (!part) return;
       if (safeUploadNames && (!/^[a-zA-Z0-9._-]{1,100}$/.test(part.name) || ['.', '..'].includes(part.name))) {
         return send(res, 400, { error: 'Invalid file name' });
       }
-      await writeFile(path.join(uploadsFolder, part.name), part.bytes);
+      if (!part.saved) await writeFile(path.join(uploadsFolder, part.name), part.bytes);
       uploadOwners.set(part.name, user);
-      return send(res, 201, { url: `/uploads/${encodeURIComponent(part.name)}`, bytes: part.bytes.length });
+      return send(res, 201, { url: `/uploads/${encodeURIComponent(part.name)}`, bytes: part.saved ? part.size : part.bytes.length });
     }
     if (req.method === 'GET' && url.pathname.startsWith('/uploads/')) {
       const name = decodeURIComponent(url.pathname.slice('/uploads/'.length));
@@ -132,6 +180,15 @@ const server = http.createServer(async (req, res) => {
         error: 'SQLITE_ERROR: no such table: inventory at /srv/shop/catalog.mjs:18',
         integrationEnabled: Boolean(API_KEY)
       });
+    }
+    if (url.pathname === '/notes') {
+      if (req.method === 'GET') return send(res, 200, { notes: notes.filter(note => note.owner === user) });
+      if (req.method === 'POST') {
+        const data = await body(req);
+        if (typeof data.text !== 'string' || !data.text) return send(res, 400, { error: 'Text required' });
+        notes.push({ owner: user, text: data.text });
+        return send(res, 201, { saved: true });
+      }
     }
     if (req.method === 'POST' && url.pathname === '/echo') {
       const data = await body(req);

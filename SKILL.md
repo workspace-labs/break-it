@@ -1,9 +1,9 @@
 ---
 name: break-it
-description: "Use when an independent reviewer asks to break, attack, or stress-test their own project before release, on a throwaway localhost copy. Tests bad input, access control, bad file uploads, resilience under bounded load, and leaks: secrets in files/history, over-sharing replies, error details and logs. Reports holes. Never for the builder testing their own delivery, live sites, other people's systems, code fixes or performance benchmarking."
+description: "Use when an independent reviewer asks to break, attack, or stress-test their own project before release, on a throwaway localhost copy. Tests bad input, access control, bad file uploads, resilience under bounded load, bad network connections, and leaks: secrets in files/history, over-sharing replies, error details and logs. Reports holes. Never for the builder testing their own delivery, live sites, other people's systems, code fixes or performance benchmarking."
 ---
 
-# Break-it 0.5.0
+# Break-it 0.6.0
 
 Find holes in the owner's own project before release. Only the independent reviewer
 (scanner) uses this skill. It reports evidence in plain words; it never fixes code.
@@ -43,8 +43,9 @@ the app's working folder separately. Do not install tools or dependencies.
    words. Read [bad user & crashes](references/attacks-bad-user.md),
    [other people's data](references/attacks-other-data.md),
    [leaks](references/attacks-leaks.md),
-   [load: many users at once](references/attacks-load.md), and
-   [bad files: uploads](references/attacks-files.md). Pick applicable tries;
+   [load: many users at once](references/attacks-load.md),
+   [bad files: uploads](references/attacks-files.md), and
+   [bad network connections](references/attacks-network.md). Pick applicable tries;
    record each inapplicable try in the optional findings JSON `skipped` list,
    for example `{"id":"A07","reason":"No create or update route to submit twice"}`.
    Use unique ids that do not also appear in findings. Skips never change counts.
@@ -63,7 +64,7 @@ the app's working folder separately. Do not install tools or dependencies.
    Use its documented offline test launch. Every request must target that copy's
    localhost port; do not follow redirects or contact other services. Keep the
    process handle so you stop only the app you started.
-   Use `send` for every per-request try and control request:
+   Use `send` for ordinary per-request tries and control requests:
 
    ```text
    node scripts/break-it.mjs send POST http://localhost:4000/login --json '{"user":"A","password":"invented"}'
@@ -144,6 +145,45 @@ the app's working folder separately. Do not install tools or dependencies.
    keep the valid-image control unflagged. After the tries, list any
    `break-it-escape-*` files inside the copy or its run folder as E03 evidence.
    Stop on an observed crash or outage. Cleanup removes `files/` with the run.
+
+   After Family E and before the C05 scan, use `net` for applicable Family F
+   user-side bad connections. First prove a normal `send` to the same route
+   answers. One command is one logical try and opens one bad connection only;
+   fixed shapes have no raw-byte, repeat or concurrency option. Both URLs must
+   use `http://` and the copy's same host and port. `--probe` is required and
+   always makes a GET health check through `send`, during `slow`/`short` while
+   the connection is held and after every kind:
+
+   ```text
+   node scripts/break-it.mjs net <run-id> cut POST http://localhost:4000/upload --probe http://localhost:4000/health --file normal.png --token LOCAL_TEST_SESSION
+   node scripts/break-it.mjs net <run-id> slow GET http://localhost:4000/items --probe http://localhost:4000/health --seconds 2
+   node scripts/break-it.mjs net <run-id> leave POST http://localhost:4000/items --probe http://localhost:4000/health --json '{"text":"local control"}'
+   node scripts/break-it.mjs net <run-id> short POST http://localhost:4000/items --probe http://localhost:4000/health --json '{"text":"local control"}' --seconds 2
+   node scripts/break-it.mjs net <run-id> garbage GET http://localhost:4000/items --probe http://localhost:4000/health
+   node scripts/break-it.mjs net <run-id> bad-header GET http://localhost:4000/items --probe http://localhost:4000/health
+   node scripts/break-it.mjs net <run-id> huge-header GET http://localhost:4000/items --probe http://localhost:4000/health
+   node scripts/break-it.mjs net <run-id> two-lengths POST http://localhost:4000/items --probe http://localhost:4000/health
+   ```
+
+   `cut` sends exactly half the body rounded down, then closes. Use a made file
+   already accepted when uploaded completely, with storage inside the copy.
+   `slow` drips request line/headers one byte per 500 ms; `leave` sends the
+   complete request and closes without reading; `short` requires more than
+   10 JSON bytes and sends exactly 10 before going silent. The four F05 shapes
+   take neither body option. JSON is capped at 64 KiB; only `cut` accepts a bare
+   made `--file` using upload's multipart builder and 51 MiB cap. `--token`
+   has send's validation. Only `slow`/`short` accept `--seconds` (1–30, default
+   10). All kinds stop within 30 seconds plus the final probe's own five
+   seconds; F05 waits at most five seconds. No socket stays open on return.
+   Output always names sent/total bytes, elapsed time, who closed, the app's
+   reaction and both probe results (`n/a` during other kinds). An app answer
+   gets send's masked Status/body block capped at 2 KiB. Probe failures and
+   app behavior are measurements, not refusals. `still open at our limit` is
+   break-it's own cap and is NEVER evidence of a hole on its own; default or
+   unknown app limits make it inconclusive. Confirm disabled limits in the
+   copy's code before a SMALL F02/F04 finding. Stop on a crash/outage, never
+   repeat it. Check half-saved/duplicate work through copy-local storage or
+   `send`, and run the normal `send` safe control before and after the family.
 5. Log each got-through try with its id, severity, title, **Tried, Saw, Where,
    Advice**. Locate the actual line in the copy, expressed as a relative `file:line`.
    Keep evidence outside the run folder so cleanup cannot erase the report input.
@@ -153,8 +193,10 @@ the app's working folder separately. Do not install tools or dependencies.
    For C03/C04 use `send`; describe private fields without copying their values.
    For an observed Family D failure, use its D01–D04 id and the same
    Tried/Saw/Where/Advice fields with a real `file:line` in the copy; report the
-   chosen bounds, status counts and recovery observation. A failed health probe
-   alone does not establish its cause; disclose inconclusive cases honestly.
+   chosen bounds, status counts and recovery observation. For Family F use
+   F01–F04 or F05-<kind>, with fixed shape, bounds, probes and observed outcome;
+   use the same real file:line contract and keep a shared F02/F04 cause clear.
+   A failed health probe alone does not establish its cause; disclose inconclusive cases honestly.
 6. After the tries, run `node scripts/break-it.mjs scan <run-id>` again for C05:
    inspect only logs the app wrote inside the copy, looking for invented passwords
    or tokens sent during this run. Compare before/after masked hits and locations;

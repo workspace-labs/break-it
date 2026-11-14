@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0] - 2026-11-14
+
+- Add Family F user-side bad-connection checks on the owner's throwaway localhost
+  copy: interrupted bodies, slow headers, early departure, incomplete bodies and
+  four fixed malformed-request shapes. No outside-service checks are added.
+- Add `net` with one raw local connection per command, required same-host/port
+  GET probes, fixed shapes, HTTP only and a 30-second cap plus the final probe.
+  Keep raw sockets inside send.mjs; only its node:net import widens W6.
+- Preserve generated-file validation and reuse upload's multipart builder for
+  cut files. Keep bounded masked replies, no DNS/TLS/redirect/retry, no disk
+  output and no socket left open. Document our limit as inconclusive on its own.
+- Extend the synthetic shop and real two-round demo with interrupted uploads
+  and disabled connection limits, plus safe early-departure and broken-request
+  controls. Keep existing A–E checks and approved documents unchanged.
+
 ## [0.5.0] - 2026-11-13
 
 - Add Family E bad-file upload checks E01–E07 and the valid-image safe control,

@@ -56,10 +56,10 @@ test('Family E documents only generated inputs and all fixed names with capped s
   assert.match(text, /never\s+nested/);
 });
 
-test('Family E release versions agree across the skill, package and current report reference', async () => {
-  assert.equal(JSON.parse(await read('package.json')).version, '0.5.0');
-  assert.match(await read('SKILL.md'), /^# Break-it 0\.5\.0$/m);
-  assert.match(await read('README.md'), /^# Break-it · 0\.5\.0$/m);
-  assert.match(await read('references/report-format.md'), /version 0\.5\.0/);
-  assert.match(await read('CHANGELOG.md'), /## \[0\.5\.0\] - 2026-11-13/);
+test('Current release versions agree across the skill, package and current report reference', async () => {
+  assert.equal(JSON.parse(await read('package.json')).version, '0.6.0');
+  assert.match(await read('SKILL.md'), /^# Break-it 0\.6\.0$/m);
+  assert.match(await read('README.md'), /^# Break-it · 0\.6\.0$/m);
+  assert.match(await read('references/report-format.md'), /version 0\.6\.0/);
+  assert.match(await read('CHANGELOG.md'), /## \[0\.6\.0\] - 2026-11-14/);
 });

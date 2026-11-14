@@ -11,6 +11,7 @@
 - [W7: Hook-friendly commands](#w7-hook-friendly-commands)
 - [W8: Bounded load only](#w8-bounded-load-only)
 - [W9: Generated files only](#w9-generated-files-only)
+- [W10: Bounded bad connections](#w10-bounded-bad-connections)
 
 These walls apply to every run, including a retest. The CLI handles file checks,
 copying, fingerprints, deletion, and report rendering. The reviewer remains
@@ -96,7 +97,12 @@ accounts, shared databases, or production data. If the copy cannot be made fully
 local without code changes, stop and explain the blocker. These reviewer checks
 are essential: the CLI does not intercept arbitrary app network traffic.
 `load` goes through `send` for every burst request and health probe; `upload`
-reuses that same transport in `send.mjs`. Neither adds a new network primitive.
+reuses that same transport in `send.mjs`. Only `send.mjs` owns network primitives.
+It also owns one raw local socket for `net` only, using `node:net` after the
+same URL check and pinned to literal loopback (`127.0.0.1` or `::1`). No other
+script imports a network module. `net` has no DNS, proxy, TLS, redirect or retry
+path; its same-port GET probes use the existing `send` transport. All other
+network-module restrictions stay unchanged; W10 gives the connection bounds.
 The optional `send --headers` display shows only bounded Content-Type,
 Content-Disposition and Content-Security-Policy values needed for upload reads.
 That optional block is capped at 2 KiB; `(headers cut; incomplete evidence)`
@@ -116,7 +122,7 @@ responses as evidence.
 ## W7: Hook-friendly commands
 
 Use `node scripts/break-it.mjs` for check, copy, scan, mask, send, load, make,
-upload, seal, cleanup, and report. Use
+upload, net, seal, cleanup, and report. Use
 Node's standard library for portable data handling. Do not use privileged shell
 commands, destructive shell shortcuts, downloaded installers, or Git history
 rewrites. The one plain-git exception reads history from the copy and pipes it
@@ -179,3 +185,34 @@ After the tries, list any `break-it-escape-*` files inside the copy or its run
 folder as E03 evidence. The existing cleanup deletes the made files with the
 whole run. Keep findings outside the run, then complete seal, cleanup and report
 as usual; do not add a separate deletion command.
+
+## W10: Bounded bad connections
+
+Use `net` only against the owner's throwaway copy on its localhost port, after
+one normal `send` to the same route answers. An existing guarded run id and a
+`--probe` URL are required. Both URLs must use HTTP, with exactly the same host
+and port; the probe is always GET. HTTPS is refused. A command opens one bad
+TCP connection, with at most two probes: one during a held `slow` or `short`
+connection and one after every kind. Probe failures are measurements.
+
+The only shapes are `cut`, `slow`, `leave`, `short`, `garbage`, `bad-header`,
+`huge-header` and `two-lengths`. No free-text raw bytes, repeat loop, retry,
+concurrency or TLS is available. The cut point is always half the body rounded
+down; the drip rate is one byte every 500 ms; short always sends 10 body bytes.
+Only `slow` and `short` accept `--seconds`, whole integers 1–30, default 10.
+Every bad connection stops within 30 seconds, including any during probe; the
+final probe gets its own deadline of at most five seconds. Fixed broken-request
+shapes wait at most five seconds for a reply. Nothing is kept open on return.
+
+A JSON body is capped at 64 KiB. Only `cut` accepts a file, using the same bare
+made-name checks and multipart builder as `upload`, capped at 51 MiB. The four
+broken-request kinds accept no body option. Bearer validation and the masked
+2 KiB reply block match `send`. The command starts no app, writes no file,
+retains no response on disk and exits 0 for measurements; refusals are nonzero.
+
+`still open at our limit` is our own cap and is NEVER evidence of a hole on its
+own. Default or unknown app limits make this result inconclusive; a SMALL
+F02/F04 finding needs code evidence that the relevant app limits are switched
+off. Stop on an observed crash/outage and never repeat the damaging try. Use
+normal `send` controls before and after the family; keep seal, cleanup and
+report unchanged. Family F covers user-side connections only.

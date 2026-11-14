@@ -2,6 +2,7 @@
 import { fork, spawnSync } from 'node:child_process';
 import { sendRequest } from './lib/send.mjs';
 import { runLoad } from './lib/load.mjs';
+import { runNet } from './lib/network.mjs';
 import { makeFile } from './lib/files.mjs';
 import { uploadRequest } from './lib/upload.mjs';
 import { runPath } from './lib/runs.mjs';
@@ -201,6 +202,75 @@ async function probeFiles(port, folder, runId, token, otherToken, where) {
   return { findings, blocked };
 }
 
+async function probeNetwork(port, folder, runId, token, where, source) {
+  const base = `http://127.0.0.1:${port}`;
+  const probe = `${base}/catalog`;
+  const findings = [], observations = [];
+  let blocked = 0;
+  const normal = await makeFile(runId, 'zip-bomb');
+  const complete = await uploadRequest(runId, 'POST', `${base}/upload`, { file: normal.name, token });
+  if (complete.status !== 201 || JSON.parse(complete.body).bytes !== normal.bytes) {
+    throw new Error('Complete upload control failed before the cut connection');
+  }
+  const before = await request(port, '/notes', { method: 'POST', token, data: { text: 'network-control' } });
+  if (before.status !== 201) throw new Error('Normal save control failed before Family F');
+  const cut = await runNet(runId, 'cut', 'POST', `${base}/upload`, { file: normal.name, token, probe });
+  observations.push({ id: 'F01', result: cut });
+  if (cut.probeAfter.status !== 200) throw new Error('Copy stopped answering after cut; stop Family F');
+  const file = path.join(folder, 'uploads', normal.name);
+  const stored = await readFile(file);
+  const read = await sendRequest('GET', `${base}/uploads/${normal.name}`, { token });
+  if (read.status !== 200) throw new Error('Upload read-back control failed after cut');
+  if (stored.length < normal.bytes) {
+    findings.push({ id: 'F01', severity: 'SMALL', title: 'A cut upload leaves an incomplete file available',
+      Tried: 'Uploaded a complete generated archive under 1 MiB, then sent half its multipart body and closed',
+      Saw: `The copy still answered; ${stored.length} of ${normal.bytes} file bytes remained in uploads and GET served HTTP 200`,
+      Where: where('const keepCompleteUploads ='),
+      Advice: 'Keep the prior file intact and publish an upload only after the complete request has arrived' });
+  } else if (stored.length === normal.bytes) blocked++;
+  else throw new Error('Unexpected cut-upload storage size');
+  for (const [id, kind] of [['F02', 'slow'], ['F04', 'short']]) {
+    const result = await runNet(runId, kind, 'POST', `${base}/notes`, {
+      probe, token, seconds: 1, ...(kind === 'short' ? { json: JSON.stringify({ text: 'not-complete' }) } : {})
+    });
+    observations.push({ id, result });
+    if (result.probeAfter.status !== 200) throw new Error(`Copy stopped answering after ${kind}; stop Family F`);
+    if (result.probeDuring?.status !== 200) {
+      throw new Error(`Unexpected during-probe outage for ${kind}; stop Family F`);
+    }
+    if (result.outcome === 'limit' && source.includes('const boundedConnections = false;')) {
+      findings.push({ id, severity: 'SMALL', title: kind === 'slow' ? 'Slow headers have no app time limit' : 'An incomplete body has no app time limit',
+        Tried: kind === 'slow' ? 'Dripped request headers one byte every 500 ms for one second while probing catalog'
+          : 'Sent ten bytes of a longer JSON body and went silent for one second while probing catalog',
+        Saw: 'The during and after probes answered HTTP 200; the connection stayed open at our cap and source confirms headersTimeout and requestTimeout are 0',
+        Where: where('const boundedConnections ='),
+        Advice: 'Set short bounded header and request time limits; F02 and F04 share this one configuration cause' });
+    } else if (result.outcome !== 'limit') blocked++;
+    else throw new Error(`Inconclusive ${kind} connection at our own cap`);
+  }
+  const leave = await runNet(runId, 'leave', 'POST', `${base}/notes`, {
+    probe, token, json: JSON.stringify({ text: 'left-early' })
+  });
+  observations.push({ id: 'F03', result: leave });
+  if (leave.probeAfter.status !== 200) throw new Error('Copy stopped answering after leave; stop Family F');
+  const saved = await request(port, '/notes', { token });
+  const actions = saved.data.notes?.filter(note => note.text === 'left-early');
+  if (saved.status !== 200 || !actions || actions.length > 1 ||
+      actions.some(note => note.owner !== 'A')) throw new Error('Leave save control was duplicated or half-done');
+  blocked++;
+  for (const kind of ['garbage', 'bad-header', 'huge-header', 'two-lengths']) {
+    const result = await runNet(runId, kind, 'GET', `${base}/catalog`, { probe });
+    observations.push({ id: `F05-${kind}`, result });
+    if (result.probeAfter.status !== 200) throw new Error(`Copy stopped answering after ${kind}; stop Family F`);
+    if (result.outcome === 'closed' || result.outcome === 'reset' ||
+        result.response?.status >= 400 && result.response.status < 500) blocked++;
+    else throw new Error(`Broken-request safe control failed for ${kind}`);
+  }
+  const after = await request(port, '/notes', { method: 'POST', token, data: { text: 'network-after-control' } });
+  if (after.status !== 201) throw new Error('Normal save control failed after Family F');
+  return { findings, blocked, observations };
+}
+
 export async function probeShop(port, folder, runId) {
   const source = await readFile(path.join(folder, 'server.mjs'), 'utf8');
   const where = anchor => {
@@ -282,15 +352,23 @@ export async function probeShop(port, folder, runId) {
     findings.push(...files.findings);
     blocked += files.blocked;
   }
+  let network = [];
+  if (runId) {
+    const results = await probeNetwork(port, folder, runId, token, where, source);
+    findings.push(...results.findings);
+    blocked += results.blocked;
+    network = results.observations;
+  }
   const skipped = [
     { id: 'E02', reason: 'Claimed-type case covered by separate upload tests' },
     { id: 'E05', reason: 'Shop stores archives without unpacking them; archive bytes covered by separate tests' },
     { id: 'E06', reason: 'Empty and truncated PNG cases covered by separate upload tests' }
   ];
-  if (!runId) skipped.push(...['E01', 'E03', 'E04', 'E07', 'E08', 'E-safe'].map(id => ({
+  if (!runId) skipped.push(...['E01', 'E03', 'E04', 'E07', 'E08', 'E-safe', 'F01', 'F02', 'F03', 'F04',
+    'F05-garbage', 'F05-bad-header', 'F05-huge-header', 'F05-two-lengths'].map(id => ({
     id, reason: 'No sealed run id provided to this standalone fixture probe' })));
-  return { project: 'shop-app', findings, skipped,
-    attacks: { tried: runId ? 16 : 10, blocked, gotThrough: findings.length } };
+  return { project: 'shop-app', findings, skipped, network,
+    attacks: { tried: runId ? 24 : 10, blocked, gotThrough: findings.length } };
 }
 
 async function round(source, number, workspace, runFolders) {
@@ -354,7 +432,8 @@ export async function runDemo() {
     let source = await readFile(file, 'utf8');
     // Builder simulation is restricted to this synthetic fixture in the harness workspace.
     for (const name of ['limited', 'validateEmpty', 'requireOwner', 'omitPrivate', 'hideDetails', 'releaseCatalogWork',
-      'limitUploads', 'safeUploadNames', 'downloadUploads', 'safeDownloadPaths', 'privateUploads']) {
+      'limitUploads', 'safeUploadNames', 'downloadUploads', 'safeDownloadPaths', 'privateUploads',
+      'keepCompleteUploads', 'boundedConnections']) {
       source = source.replace(`const ${name} = false;`, `const ${name} = true;`);
     }
     await writeFile(file, source);

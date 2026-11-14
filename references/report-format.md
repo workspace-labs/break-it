@@ -64,6 +64,20 @@ If upload storage is outside the copy, record the affected E ids as skipped
 with that reason. E05 is skipped when the app does not unpack archives; skips
 and inconclusive tries never inflate completed counts.
 
+Family F uses F01 (cut off halfway), F02 (slow headers), F03 (leaves before
+reply), F04 (promises more body bytes than it sends), and one distinct id for
+each F05 broken-request shape: `F05-garbage`, `F05-bad-header`,
+`F05-huge-header`, `F05-two-lengths`. Use the exact `F05-<kind>` suffix rule;
+do not merge four logical tries under a duplicate F05 id. Keep the same
+Tried/Saw/Where/Advice contract and actual relative `file:line`. Record the
+fixed kind, chosen bounds, sent/total bytes, app reaction, during/after probe
+results and any verified storage effect. Describe incomplete evidence honestly.
+`still open at our limit` alone is never a finding; SMALL F02/F04 evidence needs
+confirmed disabled app time limits in the copy's code. Keep a shared F02/F04
+cause clear using the same real source location when appropriate, as with
+D01/D04. The normal before/after `send` safe control is never a finding when it
+works. Stop on an observed outage; never repeat it just to fill a report.
+
 Every finding needs a nonempty id, title, **Tried**, **Saw**, **Where**, **Advice**
 and a severity of **CRITICAL** or **SMALL**. Report rejects missing evidence rather
 than filling it in. State the observed effect and test boundary without private
@@ -88,7 +102,7 @@ not emit secret-bearing evidence or consume its cleanup receipt.
 ## Output shape
 
 ```text
-BREAK-IT REPORT shop-app · version 0.5.0
+BREAK-IT REPORT shop-app · version 0.6.0
 Seal: real project unchanged
 Attacks: 2 tried   1 blocked   1 got through
 

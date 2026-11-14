@@ -15,7 +15,7 @@ import { cleanupRun } from '../scripts/lib/cleanup.mjs';
 test('shop source gives away no hole, try id or demo answer', async () => {
   for (const file of await readdir(examplePath)) {
     const source = await readFile(path.join(examplePath, file), 'utf8');
-    assert.doesNotMatch(source, /PLANTED|HOLE|[ABCDE]0|demo/i, file);
+    assert.doesNotMatch(source, /PLANTED|HOLE|[ABCDEF]0|demo/i, file);
   }
 });
 
@@ -37,7 +37,10 @@ test('shop answer key stays outside the app and identifies actual source lines',
     ['E03', 'const safeUploadNames ='],
     ['E04', 'const downloadUploads ='],
     ['E07', 'const privateUploads ='],
-    ['E08', 'try { bytes = await readFile(path.join(uploadsFolder, name)); }']
+    ['E08', 'try { bytes = await readFile(path.join(uploadsFolder, name)); }'],
+    ['F01', 'const keepCompleteUploads ='],
+    ['F02', 'const boundedConnections ='],
+    ['F04', 'const boundedConnections =']
   ]) {
     const line = source.split('\n').findIndex(text => text.includes(anchor)) + 1;
     assert.ok(line > 0, anchor);
@@ -49,16 +52,19 @@ test('shop answer key stays outside the app and identifies actual source lines',
   assert.ok(key.includes(`\`C01\` — \`config.mjs:${line}\``));
 });
 
-test('shop end to end detects planted holes and preserves the safe route', async () => {
+test('shop end to end detects planted holes and preserves the safe route', async t => {
+  const started = Date.now();
   const result = await runDemo();
+  t.diagnostic(`Two-round demo runtime: ${Date.now() - started} ms`);
   assert.deepEqual(result.rounds[0].findings.map(f => [f.id, f.severity]),
     [['C01', 'CRITICAL'], ['B01', 'CRITICAL'], ['A01', 'SMALL'], ['A09', 'SMALL'],
       ['C03', 'CRITICAL'], ['C04', 'SMALL'], ['D01', 'CRITICAL'], ['D02', 'SMALL'], ['D04', 'CRITICAL'],
-      ['E01', 'SMALL'], ['E03', 'CRITICAL'], ['E04', 'CRITICAL'], ['E07', 'CRITICAL'], ['E08', 'CRITICAL']]);
+      ['E01', 'SMALL'], ['E03', 'CRITICAL'], ['E04', 'CRITICAL'], ['E07', 'CRITICAL'], ['E08', 'CRITICAL'],
+      ['F01', 'SMALL'], ['F02', 'SMALL'], ['F04', 'SMALL']]);
   assert.ok(result.rounds[0].findings.every(f => /^(?:server|config)\.mjs:\d+$/.test(f.Where)));
   assert.equal(result.rounds[0].findings.some(f => f.id === 'B02-safe'), false);
-  assert.equal(result.rounds[0].attacks.blocked, 4);
-  assert.equal(result.rounds[0].attacks.tried, 18);
+  assert.equal(result.rounds[0].attacks.blocked, 9);
+  assert.equal(result.rounds[0].attacks.tried, 26);
   const traversal = result.rounds[0].findings.find(f => f.id === 'E08');
   assert.match(traversal.Saw, /HTTP 200/);
   assert.match(traversal.Saw, /server\.mjs/);
@@ -70,11 +76,34 @@ test('shop end to end detects planted holes and preserves the safe route', async
   assert.equal(result.output.includes(value), false);
   assert.equal(result.output.includes('synthetic-password-hash-local-only'), false);
   assert.deepEqual(result.rounds[1].findings, []);
-  assert.equal(result.rounds[1].attacks.blocked, 18);
+  assert.equal(result.rounds[1].attacks.blocked, 26);
   for (const round of result.rounds) {
     assert.equal(round.findings.some(f => f.id === 'D-safe'), false);
     assert.equal(round.findings.some(f => f.id === 'E-safe'), false);
+    for (const id of ['F03', 'F05-garbage', 'F05-bad-header', 'F05-huge-header', 'F05-two-lengths']) {
+      assert.equal(round.findings.some(f => f.id === id), false, `${id} stays blocked`);
+    }
   }
+  for (const [roundIndex, round] of result.rounds.entries()) {
+    assert.deepEqual(round.network.map(item => item.id), ['F01', 'F02', 'F04', 'F03',
+      'F05-garbage', 'F05-bad-header', 'F05-huge-header', 'F05-two-lengths']);
+    for (const { id, result: observed } of round.network) {
+      assert.equal(observed.probeAfter.status, 200, `${id} after probe`);
+      if (id === 'F02' || id === 'F04') {
+        assert.equal(observed.probeDuring.status, 200, `${id} during probe`);
+        if (roundIndex === 0) assert.equal(observed.outcome, 'limit');
+        else {
+          assert.notEqual(observed.outcome, 'limit');
+          assert.ok(observed.appSeconds < 1, `${id} app timeout precedes our cap`);
+        }
+      }
+      if (id.startsWith('F05-')) {
+        assert.ok(observed.outcome === 'closed' || observed.outcome === 'reset' ||
+          observed.response.status >= 400 && observed.response.status < 500, `${id} refused by app`);
+      }
+    }
+  }
+  assert.match(result.output, /Same cause: F02, F04/);
   assert.match(result.output, /BREAK-IT REPORT shop-app/);
   assert.match(result.output, /ROUND 2 shop-app/);
   assert.match(result.output, /Seal: real project unchanged/);

@@ -1,4 +1,4 @@
-# Break-it · 0.5.0
+# Break-it · 0.6.0
 
 ![break-it: find the hole a hacker would find, first](media/break-it-hero.png)
 
@@ -12,8 +12,11 @@ file uploads: files that are too large, pretend to be images, have awkward
 names, contain a harmless script marker, expand when unpacked, are broken, or
 can be read by the wrong user, plus reading outside the upload folder through
 the download address. Break-it makes every test file itself, within
-fixed size limits. It reports what
-happened, where, and what to fix.
+fixed size limits. Family F checks a user with a bad connection: they send
+only half a request, send it slowly, leave early, promise more than they send,
+or send a broken request. It checks whether the app still answers other users
+and whether anything was half-saved. Each try is one fixed, bounded local
+connection. It reports what happened, where, and what to fix.
 The builder fixes the holes; Break-it never fixes them.
 
 For Claude Code, Codex and other agents that read Agent Skills. Requires Node
@@ -40,8 +43,8 @@ node scripts/demo-shop.mjs
 ```
 
 This starts only temporary copies on a free loopback port. It tests bad-input,
-access-control, leak, bounded-load and upload cases with safe controls, simulates builder
-fixes in synthetic scratch source,
+access-control, leak, bounded-load, upload and bad-connection cases with safe
+controls, simulates builder fixes in synthetic scratch source,
 then tests a fresh copy again. Nothing in your real project is changed.
 
 ## The walls
@@ -58,6 +61,9 @@ then tests a fresh copy again. Nothing in your real project is changed.
 - Uploads use only files made by Break-it inside that temporary run. Check
   first that the app saves and unpacks uploads inside its copy; otherwise skip
   the family with a reason.
+- Bad connections use one fixed HTTP connection and required same-port health
+  probes. Break-it stops it within 30 seconds, with at most five more seconds
+  for the final probe, and leaves nothing open.
 - Run the portable Node commands. No downloaded tools or dependencies.
 
 A copy is not an operating-system sandbox. Before starting any real app, verify
@@ -79,6 +85,8 @@ node scripts/break-it.mjs load GET http://localhost:4000/health --requests 20 --
 node scripts/break-it.mjs make RUN_ID normal-png
 node scripts/break-it.mjs upload RUN_ID POST http://localhost:4000/upload --file normal.png --token LOCAL_TEST_SESSION
 node scripts/break-it.mjs send GET http://localhost:4000/uploads/normal.png --headers --token LOCAL_TEST_SESSION
+node scripts/break-it.mjs net RUN_ID cut POST http://localhost:4000/upload --probe http://localhost:4000/health --file normal.png --token LOCAL_TEST_SESSION
+node scripts/break-it.mjs net RUN_ID slow GET http://localhost:4000/health --probe http://localhost:4000/health --seconds 2
 node scripts/break-it.mjs scan RUN_ID
 node scripts/break-it.mjs seal RUN_ID
 node scripts/break-it.mjs cleanup RUN_ID
@@ -232,6 +240,46 @@ probe is separate.
 The command starts nothing, edits nothing and leaves no file behind. A normal
 route that stays healthy through the burst is a safe control, never a hole.
 
+After Family E and before the final log scan, [Family F](references/attacks-network.md)
+uses `net RUN_ID KIND METHOD URL --probe URL` to check a user's bad connection.
+First establish that a normal `send` to the same route answers; use a normal
+`send` again after the family as a safe control. `--probe` is required, always
+GET, and must use the same host and port as the target. Only `http://` is
+supported; the socket is pinned to a literal loopback address, without DNS,
+proxy, TLS, redirects or retries. Each command is one logical try. Stop on an
+observed crash/outage and never repeat the damaging try.
+
+The fixed choices are `cut` (exactly half a body, rounded down), `slow` (request
+line/headers one byte per 500 ms), `leave` (full request then leave without
+reading), `short` (exactly 10 body bytes then silence), and `garbage`,
+`bad-header`, `huge-header`, `two-lengths` (fixed broken requests). No raw-byte,
+repeat or concurrency option is available. Only `slow` and `short` accept
+`--seconds`: whole integers 1–30, default 10. `short` requires a `--json` body
+over 10 bytes; all JSON bodies have the same 64 KiB cap as `send`. Only `cut`
+accepts `--file`, using upload's guarded made file and shared multipart builder,
+with a 51 MiB total cap. First confirm that a full upload would be accepted and
+that storage is inside the copy. The four broken-request kinds accept no body.
+`--token` uses send's existing validation.
+
+Every command opens one bad connection plus at most two normal probes. A probe
+runs during `slow`/`short` while the connection is held and after every kind,
+through send's five-second deadline. The connection stops within 30 seconds;
+the final probe has at most five additional seconds. Broken-request replies
+wait at most five seconds. No socket or file is left behind. Output always
+shows bytes sent, elapsed time, app reaction and both probes; `probe during`
+is `n/a` for other kinds. App answers use send's masked Status/body block capped
+at 2 KiB. Probe failures and all app behaviors are measurements; the command
+exits 0 when the try ran, nonzero only for refusals.
+
+`still open at our limit` is break-it's own cap and is NEVER evidence of a hole
+on its own. For slow/incomplete requests, default or unknown app limits mean
+inconclusive. A SMALL finding needs code evidence that the relevant limits are
+switched off; a failed probe needs an established app outage/cause. Read back
+created data or inspect copy-local storage to check half-saved or duplicate work.
+For `leave`, no peer reply or reaction is observed: a closed outcome with
+`we closed: yes` records our departure. Judge the app through its probes and
+normal `send` readback. Family F covers the user's connection only.
+
 After stopping your app, run seal, then cleanup. Cleanup prints only the path of
 a receipt file under `break-it/receipts` in your OS temporary directory, outside
 the deleted run. Report finds it by run id, checks that the run is gone and the
@@ -249,8 +297,9 @@ report receipt. Preserve the alarm; never turn it into a clean report.
 The CLI is a safety shell with bounded secret-pattern checks, not a complete
 security scanner. The agent adapts the [bad-user](references/attacks-bad-user.md),
 [access-control](references/attacks-other-data.md),
-[leak](references/attacks-leaks.md), [load](references/attacks-load.md), and
-[bad-file upload](references/attacks-files.md)
+[leak](references/attacks-leaks.md), [load](references/attacks-load.md),
+[bad-file upload](references/attacks-files.md), and
+[bad-network connection](references/attacks-network.md)
 try lists to the intended change.
 Count completed tries, including safe controls; put inapplicable ids and reasons
 in the optional findings JSON `skipped` list and disclose inconclusive tries in
@@ -267,8 +316,10 @@ error revealing internal details. It also demonstrates a route that fails under
 a small burst, fails its recovery probe, and an unlimited login route. A healthy
 normal route stays unflagged. Upload cases demonstrate an oversized file,
 a one-level traversal name, inline script content and another user's private
-file, while a valid image for its owner stays unflagged. Round 2 repeats the tries on a fresh copy of
-the harness's fixed scratch source and finds no remaining holes. The original
+file, while a valid image for its owner stays unflagged. Bad-connection tries
+find a half-kept upload and switched-off connection limits; leaving early and
+all four broken-request shapes stay blocked in both rounds. Round 2 repeats the
+tries on a fresh copy of the harness's fixed scratch source and finds no remaining holes. The original
 example app is untouched.
 
 Every finding includes Tried, Saw, Where and Advice. Secret evidence is masked;
@@ -294,6 +345,6 @@ regression audit and merge verification are recorded in
 ## Coming next
 
 Future owner-approved versions may add injection, other settings checks,
-AI and desktop checks. They are not implemented in 0.5.0.
+AI and desktop checks. They are not implemented in 0.6.0.
 
 MIT licensed.
