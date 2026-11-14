@@ -969,101 +969,31 @@ tagged, released or installed; installed skill mirrors were not updated.
 
 ## 0.6.0 — Family F, bad network connections (2026-11-14)
 
-Builder: Codex. Reviewer: Claude; independent review remains pending.
-Started on clean `main` at `83c393b088a33b19c384ed1df0ff1bcc2c7b154a`.
-This is the compatible Family F addition, version **0.6.0**. Only local commits
-are authorized; no push, tag, release or installed-skill update was performed.
+Builder: Codex. Reviewer: Claude; independent review pending. Clean `main` at
+`83c393b088a33b19c384ed1df0ff1bcc2c7b154a`. Pre-implementation Node 20.20.2 baseline:
+**523/523**, **41.897 s**. Initial sandbox attempts failed on localhost `EPERM`;
+passing runs permitted the disposable loopback servers. No assertions were weakened.
 
-### Baseline and full suites
+Final complete `node --test` suites ran sequentially on macOS, zero failures/skips/cancellations:
 
-Before implementation, the Node **20.20.2** baseline passed **523/523**, with
-zero failures/skips/cancellations, in **41.897 s**. The first sandboxed run on
-the default Node 22.14.0 could not listen on localhost (`listen EPERM`); the
-baseline rerun enabled the disposable test servers' required loopback access.
-The baseline command was the installed Node 20 runtime followed by `--test`.
+- Node **18.20.8**: **547/547**, **59.817 s**.
+- Node **20.20.2**: **547/547**, **59.220 s**.
+- Node **22.23.1**: **547/547**, **59.766 s**.
 
-Final complete suites ran sequentially on macOS using each installed runtime's
-absolute path and `--test`, with the same localhost access:
+Added **23 net tests + one W10 test**; all 523 earlier tests remain. RED preceded implementation.
+Coverage: refusals, eight wire shapes, multipart reuse, fixed byte/drip limits, overlapping probes,
+masks, redirects/proxies, resets, silent servers, socket closure and real 30 s cap. Builder inspection
+added status-600 and partial-reply EOF/deadline regressions. Two cancelled-probe fixture assertions
+were corrected. Focused send/upload: **28/28**; shop: **16/16**. Release/shop expectations expand;
+W6 only allows `node:net` in send.mjs, W7 admits net, and W10 checks literal-loopback connection.
 
-- Node **18.20.8**: **547/547 passed**, **59.817 s**.
-- Node **20.20.2**: **547/547 passed**, **59.220 s**.
-- Node **22.23.1**: **547/547 passed**, **59.766 s**.
+Real `node scripts/demo-shop.mjs --write`: **4.40 s**; **26 tried / 9 blocked / 17 findings**,
+then **26 / 26 / 0**. A–E hold; F01/F02/F04 add SMALL findings, F02/F04 share one cause.
+F01's complete 102,039-byte archive is accepted both rounds before cutting; F03/all F05 stay blocked.
+Round-2 limits: headers 350 ms, requests 600 ms, checks every 50 ms. Approved docs remain identical.
 
-Every final suite has zero failures, skips and cancellations. The increase is
-**24 tests**: 23 in `tests/net.test.mjs` and one new W10 transport-wall check.
-All 523 earlier tests remain, with release-version assertions updated and shop
-expectations extended for the eight new connections. W6 only stops forbidding
-`node:net` inside `send.mjs`; its other restrictions remain. W7 admits `net`.
-The additional W10 assertion locates the one raw connect after URL validation,
-HTTP-only validation and literal loopback pinning.
-
-### Behavior and failure checks
-
-The initial `cut` CLI test failed against the previous Usage refusal before
-implementation. The new shop anchor test likewise first failed for the absent
-complete-upload switch. The command's options/refusals, eight exact wire shapes,
-JSON byte boundary, made-file multipart framing and symlink refusal are covered
-by retained tests. Raw code lives in `send.mjs`; options and summaries live in
-`network.mjs`; `withUploadBody` reuses upload's existing guarded file handling
-and multipart builder. Existing send/upload regression tests passed **28/28**.
-
-Local capture servers verify fixed half-body and ten-byte cuts, the 500 ms drip,
-FIN/close, one bad connection and at most two GET probes, actual probe overlap,
-no redirects/proxy use, masked and capped replies, chunked response decoding,
-reset/early-response measurements and closure at the fixed five-second and real
-thirty-second limits. A silent app with silent probes returns in about six
-seconds for a one-second try, including the final five-second probe, with every
-client socket side closed. The Node 18 real thirty-second test took **30.097 s**
-including CLI startup/probe/fixture checks.
-
-Builder read-only inspection found two reply-reader edge cases: a nonstandard
-600 status was hidden, and a prematurely ended Content-Length body lacked a
-cut marker. Both were corrected; retained tests cover status 600 and partial
-bodies at EOF and at the deadline. Parser-owned read limits identify our own
-closure; `leave` deliberately observes no peer reply, so its closed outcome with
-`we closed: yes` records our departure, not proof of an app reaction. Docs direct
-the reviewer to the probes and action read-back. Two initial raw-capture fixture
-assertions counted an empty cancelled probe as a second bad connection; the
-fixture now distinguishes sockets carrying actual try bytes. Final suites pass.
-
-### Shop and report
-
-`node scripts/demo-shop.mjs --write` regenerated the report from real output on
-Node 20 in **4.40 s** wall time. Round 1: **26 tried / 9 blocked / 17 got through**.
-Round 2: **26 tried / 26 blocked / 0 got through**. Existing A–E findings and safe
-controls are preserved. The three additional SMALL findings are F01, F02 and
-F04; F02/F04 point to one disabled-time-limit cause. F03 and all four F05 kinds
-stay blocked in both rounds. The focused shop tests passed **16/16**.
-
-F01 first uploads the complete generated 102,039-byte archive, accepted below the
-round-2 one-MiB limit, then cuts the same upload. Round 1 keeps/serves a shorter
-file; round 2 retains the prior complete file. F03 uses the synthetic shop's
-small per-user `/notes` create/read-back fixture to prove zero or one completed
-action. Round 2 uses 350 ms headers, 600 ms requests and a 50 ms connection
-checking interval; both held connections end before our one-second demo cap.
-All answer anchors stay outside the app and identify actual source lines.
-
-### Preservation, audit and limits
-
-The approved `docs/` files remain byte-identical to `83c393b`. File generation,
-leak matching, copy/seal/cleanup, load behavior and dependencies are unchanged.
-The raw socket is the only new transport, within the single authorized W6
-exception. No outside-service checks or roadmap promise were added.
-
-Read-only static audits of baseline/candidate snapshots under the discoverable
-folder name `break-it` each report zero structural errors and the same four
-existing notices: the large hero image is skipped, README/evidence contain
-model-specific mentions, and historical evidence contains a personal path.
-The checkout's owner-chosen folder name `break-it-skill` alone produces a name
-mismatch when audited in place; no installed folder was renamed or changed.
-The optional Python quick validator could not run because PyYAML is absent;
-no dependency was installed. Metadata, references and safety walls passed the
-Node audit and repository checks.
-
-Evidence is in `/private/tmp/break-it-060-evidence/`: baseline archive/log,
-`final-node18.log`, `final-node20.log`, `final-node22.log`, transport/shop/demo
-logs, baseline/candidate static audits and `preservation.json`. Reproduce with
-each Node runtime's `--test`, or run `node scripts/demo-shop.mjs --write`.
-These are builder checks, not Claude's independent acceptance. **Windows was
-not run**: no Windows socket timing, process lifecycle, path or full-suite claim
-is made. Existing scanner and filesystem-isolation limits still apply.
+Baseline/candidate skill audits under folder name `break-it`: zero structural errors, same four notices.
+Python quick validator unavailable (PyYAML absent; no install). Evidence, logs, baseline archive and
+preservation comparison: `/private/tmp/break-it-060-evidence/`. Dependencies/installed skills unchanged.
+Only local commits; no push/tag/release/install. **Windows not run** (suite, sockets/lifecycle, paths).
+Existing scanner/isolation limits remain. These are builder checks, not independent acceptance.
