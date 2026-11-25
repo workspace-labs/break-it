@@ -47,9 +47,12 @@ the app's working folder separately. Do not install tools or dependencies.
    [bad files: uploads](references/attacks-files.md), and
    [bad network connections](references/attacks-network.md), and
    [login and sessions](references/attacks-login.md). Pick applicable tries;
-   record each inapplicable try in the optional findings JSON `skipped` list,
-   for example `{"id":"A07","reason":"No create or update route to submit twice"}`.
-   Use unique ids that do not also appear in findings. Skips never change counts.
+   record each inapplicable or unrun try in the optional findings JSON `skipped`
+   list, for example `{"id":"A07","reason":"No create or update route to submit twice"}`.
+   Record each attempted try that needs more evidence in the optional
+   `inconclusive` list, for example `{"id":"T04","reason":"The response was incomplete"}`.
+   Use ids that are unique across findings, skips and inconclusive entries. Skips
+   and inconclusive tries never change counts.
 2. Before startup, run `node scripts/break-it.mjs scan <run-id>` on the copy.
    Read [the pattern list and limits](references/leak-patterns.md); a clean result
    means only those patterns were not found in the files inspected. Record size
@@ -283,6 +286,11 @@ the app's working folder separately. Do not install tools or dependencies.
    node scripts/break-it.mjs report <run-id> <findings.json>
    ```
 
+   Nonempty inconclusive entries appear under `Inconclusive (not counted)` after
+   the skipped section and before the footer. A retest with no findings but
+   inconclusive entries says `Incomplete evidence; inconclusive tries need more
+   evidence`, not that it is ready for the owner's look.
+
    Report finds the receipt by run id, checks the real fingerprint again, requires
    the run to be gone, and deletes the receipt after successful validation. Only
    then does its footer say nothing is left behind. A failed report keeps the
@@ -299,7 +307,9 @@ Hand the generated report to the independent reviewer's notes as **Break-tries**
 Recommend what needs fixing and where; the builder fixes it separately. After
 the builder's fix, repeat all four parts with a **fresh copy**, retest the original
 holes and the safe controls, and report **Round 2** (then further rounds if needed).
-No remaining hole means ready for the owner's look, never automatic approval.
+No remaining holes or inconclusive tries means ready for the owner's look, never
+automatic approval. If an inconclusive check remains, gather more evidence instead
+of recommending readiness.
 
 Do not edit code in the real project or the attack copy. Do not make any
 Backloop/pipeline status move, Commit, Accept, or Reject. The owner controls gates.

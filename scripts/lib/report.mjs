@@ -23,6 +23,12 @@ function text(value, field) {
     throw new Error(`Refused: ${field} must be nonempty, single-line evidence.`);
   }
 }
+function inconclusiveText(value, field) {
+  text(value, field);
+  if (typeof value === 'string' && /[\u0085\u2028\u2029]/.test(value)) {
+    throw new Error(`Refused: ${field} must be nonempty, single-line evidence.`);
+  }
+}
 export function validateFindings(data) {
   guardLoginValues(data);
   for (const finding of Array.isArray(data?.findings) ? data.findings : []) {
@@ -30,6 +36,9 @@ export function validateFindings(data) {
   }
   for (const skipped of Array.isArray(data?.skipped) ? data.skipped : []) {
     guardSecrets(skipped, typeof skipped?.id === 'string' ? skipped.id : 'skipped');
+  }
+  for (const inconclusive of Array.isArray(data?.inconclusive) ? data.inconclusive : []) {
+    guardSecrets(inconclusive, typeof inconclusive?.id === 'string' ? inconclusive.id : 'inconclusive');
   }
   guardSecrets(data?.project, 'project');
   text(data.project, 'project');
@@ -61,6 +70,19 @@ export function validateFindings(data) {
       if (skippedIds.has(skip.id)) throw new Error('Refused: skipped ids must be unique.');
       if (ids.has(skip.id)) throw new Error('Refused: skipped id must not also appear in findings.');
       skippedIds.add(skip.id);
+      ids.add(skip.id);
+    }
+  }
+  if (data.inconclusive !== undefined) {
+    if (!Array.isArray(data.inconclusive)) throw new Error('Refused: inconclusive must be a list.');
+    const inconclusiveIds = new Set();
+    for (const entry of data.inconclusive) {
+      inconclusiveText(entry?.id, 'inconclusive id');
+      inconclusiveText(entry?.reason, 'inconclusive reason');
+      if (inconclusiveIds.has(entry.id)) throw new Error('Refused: inconclusive ids must be unique.');
+      if (ids.has(entry.id)) throw new Error('Refused: inconclusive id must not also appear in findings or skipped.');
+      inconclusiveIds.add(entry.id);
+      ids.add(entry.id);
     }
   }
 }
@@ -108,13 +130,19 @@ export async function reportRun(id, data) {
   }
   if (data.round > 1) {
     const critical = sorted.filter(f => f.severity === 'CRITICAL').length;
-    const result = sorted.length === 0 ? "Ready for the owner's look" : 'Holes remain; send advice to the builder';
+    const result = sorted.length > 0 ? 'Holes remain; send advice to the builder' :
+      data.inconclusive?.length > 0 ? 'Incomplete evidence; inconclusive tries need more evidence' : "Ready for the owner's look";
     lines.push(`Critical holes: ${critical}   ->   ${result}`);
   }
   if (data.skipped !== undefined) {
     lines.push('', 'Skipped (not counted)');
     const width = Math.max(3, ...data.skipped.map(skip => skip.id.length));
     for (const skip of data.skipped) lines.push(`  ${skip.id.padEnd(width)}    ${skip.reason}`);
+  }
+  if (data.inconclusive?.length > 0) {
+    lines.push('', 'Inconclusive (not counted)');
+    const width = Math.max(3, ...data.inconclusive.map(entry => entry.id.length));
+    for (const entry of data.inconclusive) lines.push(`  ${entry.id.padEnd(width)}    ${entry.reason}`);
   }
   lines.push('', 'Copy deleted. Nothing left behind. Break-it changed no code.');
   await deleteReceipt(id, identity);

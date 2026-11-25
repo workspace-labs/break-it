@@ -36,12 +36,24 @@ test('report guard refuses an unmasked secret in skipped reason without echoing 
   assert.ok(!message.includes(value), 'refusal does not reveal the credential');
 });
 
-test('report guard checks all finding and skipped text including nested extra evidence', () => {
+test('report guard refuses an unmasked secret in inconclusive reason without echoing it', () => {
+  const input = data();
+  input.inconclusive = [{ id: 'T04', reason: unmasked }];
+  let message = '';
+  try { validateFindings(input); } catch (error) { message = error.message; }
+  assert.equal(message, 'Refused: finding T04 contains an unmasked secret; use the masked form.');
+  assert.ok(!message.includes(value), 'refusal does not reveal the credential');
+});
+
+test('report guard checks finding, skipped and inconclusive text including nested extra evidence', () => {
   const input = data();
   input.findings[0].evidence = { details: [unmasked] };
   assert.throws(() => validateFindings(input), /contains an unmasked secret; use the masked form/);
   delete input.findings[0].evidence;
   input.skipped = [{ id: 'C02', reason: 'History unavailable', details: { note: unmasked } }];
+  assert.throws(() => validateFindings(input), /contains an unmasked secret; use the masked form/);
+  delete input.skipped;
+  input.inconclusive = [{ id: 'T04', reason: 'Response incomplete', details: { note: unmasked } }];
   assert.throws(() => validateFindings(input), /contains an unmasked secret; use the masked form/);
 });
 
@@ -91,6 +103,27 @@ test('report CLI refuses leaking input before printing any report or consuming i
   await writeFile(file, JSON.stringify(input));
   const corrected = cli('report', run.id, file);
   assert.equal(corrected.status, 0, 'receipt survives refusal for corrected evidence');
+  assert.ok(corrected.stdout.includes(masked), 'masked evidence is preserved');
+});
+
+test('report CLI refuses leaking inconclusive evidence and keeps its receipt for correction', async t => {
+  const p = await project(t);
+  const run = newRun(t, p);
+  assert.equal(cli('cleanup', run.id).status, 0);
+  const file = path.join(p, '..', `inconclusive-leak-${run.id}.json`);
+  t.after(() => unlink(file).catch(() => {}));
+  const input = data();
+  input.inconclusive = [{ id: 'T04', reason: unmasked }];
+  await writeFile(file, JSON.stringify(input));
+  const refused = cli('report', run.id, file);
+  assert.notEqual(refused.status, 0);
+  assert.equal(refused.stdout, '');
+  assert.ok(!(refused.stdout + refused.stderr).includes(value), 'CLI refusal is masked');
+  input.inconclusive[0].reason = `Response incomplete after ${masked}`;
+  await writeFile(file, JSON.stringify(input));
+  const corrected = cli('report', run.id, file);
+  assert.equal(corrected.status, 0, 'receipt survives refusal for corrected evidence');
+  assert.match(corrected.stdout, /Inconclusive \(not counted\)/);
   assert.ok(corrected.stdout.includes(masked), 'masked evidence is preserved');
 });
 

@@ -332,11 +332,16 @@ security scanner. The agent adapts the [bad-user](references/attacks-bad-user.md
 [bad-file upload](references/attacks-files.md), and
 [bad-network connection](references/attacks-network.md)
 try lists to the intended change.
-Count completed tries, including safe controls; put inapplicable ids and reasons
-in the optional findings JSON `skipped` list and disclose inconclusive tries in
-review notes. Skips never change counts. Findings at the same file and line get
-a same-cause note. A report needs at least one completed logical try.
-A passing run proves only what was tried.
+Count completed tries, including safe controls. Put inapplicable or unrun ids and
+reasons in the optional findings JSON `skipped` list. Put attempted tries that
+need more evidence in the optional `inconclusive` list, for example
+`{"id":"T04","reason":"The response was incomplete"}`. Ids must be unique across
+findings, skips and inconclusive entries. Skips and inconclusive tries never
+change counts; nonempty inconclusive entries appear in their own report section.
+A retest with no findings but inconclusive evidence says more evidence is needed,
+not that it is ready. Findings at the same file and line get a same-cause note.
+A report needs at least one completed logical try. A passing run proves only what
+was tried.
 
 ## Example: orders, leaks, load and uploads
 

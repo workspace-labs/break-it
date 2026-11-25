@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { project, newRun, cli, receiptFileFrom } from './helpers.mjs';
 import { rememberLoginValue, rememberRunLoginValue, maskLoginValues, readLoginShapes,
@@ -57,6 +57,28 @@ test('sample fingerprints survive cleanup without raw values and block fresh-pro
   // Importing reportRun has no access to the removed run's raw sample.
   await assert.rejects(reportRun(run.id, findings), /login value/);
   assert.match(await reportRun(run.id, data()), /BREAK-IT REPORT/);
+});
+
+test('login fingerprint guards inconclusive CLI evidence without consuming the receipt', async t => {
+  const p = await project(t), run = newRun(t, p);
+  const value = 'localOnlySyntheticInconclusive123';
+  await rememberRunLoginValue(run.id, value);
+  const receipt = receiptFileFrom(cli('cleanup', run.id));
+  assert.ok((await readFile(receipt, 'utf8')).includes('loginShapes'));
+  const file = path.join(p, '..', `inconclusive-login-${run.id}.json`);
+  t.after(() => unlink(file).catch(() => {}));
+  const findings = data();
+  findings.inconclusive = [{ id: 'T04', reason: `Response contained ${value}` }];
+  await writeFile(file, JSON.stringify(findings));
+  const refused = cli('report', run.id, file);
+  assert.notEqual(refused.status, 0);
+  assert.equal(refused.stdout, '');
+  assert.ok(!(refused.stdout + refused.stderr).includes(value));
+  findings.inconclusive[0].reason = 'The response was incomplete';
+  await writeFile(file, JSON.stringify(findings));
+  const corrected = cli('report', run.id, file);
+  assert.equal(corrected.status, 0, 'corrected evidence can use the retained receipt');
+  assert.match(corrected.stdout, /Inconclusive \(not counted\)/);
 });
 
 test('login fingerprint paths refuse bad ids and never echo input values in errors', async () => {

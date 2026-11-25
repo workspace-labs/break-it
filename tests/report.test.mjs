@@ -147,6 +147,161 @@ test('T1 absent skipped list leaves out the skipped block', async t => {
   assert.doesNotMatch(r.stdout, /Skipped \(not counted\)/);
 });
 
+test('T3 optional inconclusive list accepts absent, empty and valid lists without changing counts', () => {
+  const data = validData();
+  assert.doesNotThrow(() => validateFindings(data));
+  data.inconclusive = [];
+  assert.doesNotThrow(() => validateFindings(data));
+  data.inconclusive = [{ id: 'T04', reason: 'The response was incomplete' }];
+  const before = JSON.stringify(data);
+  assert.doesNotThrow(() => validateFindings(data));
+  assert.equal(JSON.stringify(data), before);
+});
+
+for (const inconclusive of [null, {}, 'T04', [null], [{}],
+  [{ id: '', reason: 'The response was incomplete' }], [{ id: '  ', reason: 'The response was incomplete' }],
+  [{ id: 'T04\nT05', reason: 'The response was incomplete' }], [{ id: 'T04', reason: '' }],
+  [{ id: 'T04', reason: '  ' }], [{ id: 'T04', reason: 'line one\nline two' }],
+  [{ id: 'T04', reason: 'control\u0000byte' }], [{ id: 4, reason: 'The response was incomplete' }],
+  [{ id: 'T04', reason: 4 }]]) {
+  test(`T3 refuses invalid inconclusive evidence ${JSON.stringify(inconclusive)}`, () => {
+    assert.throws(() => validateFindings({ ...validData(), inconclusive }), /Refused:.*inconclusive/);
+  });
+}
+
+for (const field of ['id', 'reason']) {
+  test(`T3 refuses Unicode line breaks in inconclusive ${field}`, () => {
+    for (const lineBreak of ['\u2028', '\u2029', '\u0085']) {
+      const entry = { id: 'T04', reason: 'The response was incomplete' };
+      entry[field] = `before${lineBreak}after`;
+      assert.throws(() => validateFindings({ ...validData(), inconclusive: [entry] }),
+        /Refused:.*single-line evidence/);
+    }
+  });
+}
+
+const legacyUnicodeCases = [
+  ['project label', (data, value) => { data.project = value; }],
+  ['finding title', (data, value) => { data.findings[0].title = value; }],
+  ['skip reason', (data, value) => { data.skipped = [{ id: 'A07', reason: value }]; }]
+];
+for (const [label, setValue] of legacyUnicodeCases) {
+  test(`F03 preserves 0.7.0 Unicode compatibility in ${label}`, () => {
+    for (const lineBreak of ['\u2028', '\u2029', '\u0085']) {
+      const data = validData();
+      setValue(data, `before${lineBreak}after`);
+      assert.doesNotThrow(() => validateFindings(data));
+    }
+  });
+}
+
+test('T3 refuses duplicate inconclusive ids and overlap with finding and skip ids', () => {
+  assert.throws(() => validateFindings({ ...validData(), inconclusive: [
+    { id: 'T04', reason: 'The response was incomplete' },
+    { id: 'T04', reason: 'The response was incomplete' }
+  ] }), /inconclusive ids must be unique/);
+  assert.throws(() => validateFindings({ ...validData(), inconclusive: [
+    { id: hole.id, reason: 'Already completed' }
+  ] }), /inconclusive id must not also appear in findings or skipped/);
+  assert.throws(() => validateFindings({ ...validData(),
+    skipped: [{ id: 'A07', reason: 'No write route' }],
+    inconclusive: [{ id: 'A07', reason: 'Already recorded as skipped' }]
+  }), /inconclusive id must not also appear in findings or skipped/);
+});
+
+test('T3 inconclusive entries do not bypass the completed-try minimum', () => {
+  assert.throws(() => validateFindings({ ...validData(), findings: [],
+    attacks: { tried: 0, blocked: 0, gotThrough: 0 },
+    inconclusive: [{ id: 'T04', reason: 'The response was incomplete' }]
+  }), /at least one completed try/i);
+});
+
+test('T3 report places inconclusive evidence after skipped before footer without counting it', async t => {
+  const s = await setup(t);
+  s.data.skipped = [{ id: 'A07', reason: 'No create or update route to submit twice' }];
+  s.data.inconclusive = [{ id: 'T04', reason: 'The response was incomplete' },
+    { id: 'G04', reason: 'The cookie lifetime could not be established' }];
+  const r = await s.report();
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /Attacks: 2 tried   1 blocked   1 got through/);
+  assert.match(r.stdout, /Inconclusive \(not counted\)\n  T04    The response was incomplete\n  G04    The cookie lifetime could not be established/);
+  assert.ok(r.stdout.indexOf('Skipped (not counted)') < r.stdout.indexOf('Inconclusive (not counted)'));
+  assert.ok(r.stdout.indexOf('Inconclusive (not counted)') < r.stdout.indexOf('Copy deleted.'));
+});
+
+test('T3 omitted and empty inconclusive lists preserve round one and clean retest output', async t => {
+  const s = await setup(t);
+  for (const round of [1, 2]) {
+    const output = [];
+    for (const empty of [false, true]) {
+      const run = round === 1 && !empty ? s.run : newRun(t, s.p);
+      if (run !== s.run || empty) cli('cleanup', run.id);
+      s.data.round = round;
+      s.data.findings = round === 1 ? [{ ...hole }] : [];
+      s.data.attacks = round === 1 ? { tried: 2, blocked: 1, gotThrough: 1 } :
+        { tried: 2, blocked: 2, gotThrough: 0 };
+      if (empty) s.data.inconclusive = [];
+      else delete s.data.inconclusive;
+      await writeFile(s.file, JSON.stringify(s.data));
+      const r = cli('report', run.id, s.file);
+      assert.equal(r.status, 0, r.stderr);
+      assert.doesNotMatch(r.stdout, /Inconclusive \(not counted\)/);
+      output.push(r.stdout);
+    }
+    assert.equal(output[0], output[1]);
+    if (round === 2) assert.match(output[0], /Critical holes: 0   ->   Ready for the owner's look/);
+  }
+});
+
+test('T3 retest distinguishes incomplete evidence from readiness and confirmed findings', async t => {
+  const s = await setup(t);
+  s.data.round = 2;
+  s.data.findings = [];
+  s.data.attacks = { tried: 2, blocked: 2, gotThrough: 0 };
+  s.data.inconclusive = [{ id: 'T04', reason: 'The response was incomplete' }];
+  const inconclusive = await s.report();
+  assert.equal(inconclusive.status, 0, inconclusive.stderr);
+  assert.match(inconclusive.stdout, /Critical holes: 0   ->   Incomplete evidence; inconclusive tries need more evidence/);
+  assert.doesNotMatch(inconclusive.stdout, /Ready for the owner's look/);
+
+  const fresh = newRun(t, s.p);
+  cli('cleanup', fresh.id);
+  s.data.findings = [{ ...hole }];
+  s.data.attacks = { tried: 2, blocked: 1, gotThrough: 1 };
+  await writeFile(s.file, JSON.stringify(s.data));
+  const finding = cli('report', fresh.id, s.file);
+  assert.equal(finding.status, 0, finding.stderr);
+  assert.match(finding.stdout, /Critical holes: 1   ->   Holes remain; send advice to the builder/);
+});
+
+test('T3 refused inconclusive input keeps its receipt and success consumes it', async t => {
+  const s = await setup(t);
+  s.data.inconclusive = [{ id: 'T04', reason: 'line one\nline two' }];
+  const refused = await s.report();
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /inconclusive reason/);
+  assert.ok((await lstat(s.receiptFile)).isFile());
+  s.data.inconclusive[0].reason = 'The response was incomplete';
+  const corrected = await s.report();
+  assert.equal(corrected.status, 0, corrected.stderr);
+  await assert.rejects(lstat(s.receiptFile), { code: 'ENOENT' });
+  assert.notEqual((await s.report()).status, 0);
+});
+
+test('T3 Unicode line break refusal preserves the receipt for correction', async t => {
+  const s = await setup(t);
+  s.data.inconclusive = [{ id: 'T04', reason: 'The response was incomplete\u2028retry needed' }];
+  const refused = await s.report();
+  assert.notEqual(refused.status, 0);
+  assert.equal(refused.stdout, '');
+  assert.match(refused.stderr, /inconclusive reason.*single-line evidence/);
+  assert.ok((await lstat(s.receiptFile)).isFile());
+  s.data.inconclusive[0].reason = 'The response was incomplete; retry needed';
+  const corrected = await s.report();
+  assert.equal(corrected.status, 0, corrected.stderr);
+  await assert.rejects(lstat(s.receiptFile), { code: 'ENOENT' });
+});
+
 test('T2 report groups one shared file:line, ignoring anchor text and preserving findings', async t => {
   const s = await setup(t);
   s.data.findings = ['A01', 'A03', 'A08'].map((id, index) => ({ ...hole, id,

@@ -36,6 +36,9 @@ keep the receipt so corrected findings can be retried.
   ],
   "skipped": [
     { "id": "A07", "reason": "No create or update route to submit twice" }
+  ],
+  "inconclusive": [
+    { "id": "T04", "reason": "The response was incomplete" }
   ]
 }
 ```
@@ -88,9 +91,10 @@ The before/after correct-login control is blocked when it works.
 
 Login values have a stricter rule than general secrets: no characters at all,
 only name, length, flags and patterns. Never save a bearer, cookie or sampled
-value in findings, including skipped text or project labels. The guard refuses
-known in-memory values and values matching the run's salted fingerprints from
-jar cookies, explicitly kept bearers or sessions samples, retained in the cleanup receipt without raw samples.
+value in findings, including skipped or inconclusive text or project labels. The
+guard refuses known in-memory values and values matching the run's salted
+fingerprints from jar cookies, explicitly kept bearers or sessions samples,
+retained in the cleanup receipt without raw samples.
 It refuses the report without printing that value or consuming the receipt.
 Never work around this by encoding a value. No pattern found is not proof of
 randomness, and rough strength is an upper bound, not an entropy measurement.
@@ -101,18 +105,21 @@ than filling it in. State the observed effect and test boundary without private
 values. The counts are nonnegative whole numbers: tried = blocked + gotThrough.
 At least one completed logical try is required; a zero-try report is refused.
 Each got-through logical try has one finding; findings.length = gotThrough.
-The optional `skipped` list records inapplicable tries as `{ "id": "A07",
-"reason": "No create or update route to submit twice" }`. Both fields must be
-nonempty, single-line strings. Skip ids must be unique and must not also appear
-in `findings`. An absent or empty list is valid. Skipped or incomplete tries do
-not change any attack count and are never counted as blocked.
+The optional `skipped` list records inapplicable or unrun tries as `{ "id": "A07",
+"reason": "No create or update route to submit twice" }`. The optional
+`inconclusive` list records attempted tries that need more evidence as
+`{ "id": "T04", "reason": "The response was incomplete" }`. Both fields in each
+entry must be nonempty, single-line strings. Ids must be unique within each list
+and across `findings`, `skipped` and `inconclusive`. Absent or empty lists are
+valid. Skipped and inconclusive tries do not change any attack count and are
+never counted as blocked.
 
 A whole secret is never saved in findings JSON, even temporarily. Use first
 3 characters + `…` + last 4 and its length, for example `sk-…a91f (51 chars)`;
 values of 8 characters or fewer use `•••• (N chars)`. Describe sensitive response
 fields without their values. The shared [pattern list](leak-patterns.md) guards
-all finding text and skipped text; a matching unmasked value is refused with
-`Refused: finding <id> contains an unmasked secret; use the masked form.`
+all finding, skipped and inconclusive text; a matching unmasked value is refused
+with `Refused: finding <id> contains an unmasked secret; use the masked form.`
 Fix the evidence by using its masked form before retrying; a refused report must
 not emit secret-bearing evidence or consume its cleanup receipt.
 
@@ -131,6 +138,9 @@ CRITICAL  Other people's orders are open
 
 Skipped (not counted)
   A07    No create or update route to submit twice
+
+Inconclusive (not counted)
+  T04    The response was incomplete
 
 Copy deleted. Nothing left behind. Break-it changed no code.
 ```
@@ -153,7 +163,10 @@ Same cause: A01, A03, A08 point to server.mjs:57; one fix may close all three.
 No shared location means no `Same cause` line. This is a possible common repair,
 not proof that the observations have identical root causes. If `skipped` is
 present, its `Skipped (not counted)` block follows the findings and any same-cause
-lines, before the footer; an empty list produces just that block's heading.
+lines, before the footer; an empty list produces just that block's heading. A
+nonempty `inconclusive` list adds `Inconclusive (not counted)` after the skipped
+section and before the footer. An omitted or empty inconclusive list adds no
+heading, preserving the established output.
 
 ## After the builder's fix
 
@@ -169,6 +182,14 @@ Critical holes: 0   ->   Ready for the owner's look
 Copy deleted. Nothing left behind. Break-it changed no code.
 ```
 
-Any remaining findings retain Tried/Saw/Where/Advice and their real severity.
-Readiness requires no remaining findings, including SMALL ones. Give the report
-to the reviewer's **Break-tries** notes. Only the owner decides Accept or Reject.
+Any remaining findings retain Tried/Saw/Where/Advice and their real severity and
+still produce `Holes remain; send advice to the builder`. With zero findings and
+one or more inconclusive entries, the result line is instead:
+
+```text
+Critical holes: 0   ->   Incomplete evidence; inconclusive tries need more evidence
+```
+
+Readiness requires no remaining findings, including SMALL ones, and no
+inconclusive entries. Give the report to the reviewer's **Break-tries** notes.
+Only the owner decides Accept or Reject.

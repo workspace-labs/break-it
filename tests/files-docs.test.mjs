@@ -56,6 +56,13 @@ test('Family E documents only generated inputs and all fixed names with capped s
   assert.match(text, /never\s+nested/);
 });
 
+test('Part 4 readiness excludes remaining inconclusive evidence', async () => {
+  const part4 = (await read('SKILL.md')).split('## Part 4: Report and fix')[1];
+  assert.match(part4, /No remaining holes or inconclusive tries means ready/);
+  assert.match(part4, /If an inconclusive check remains, gather more evidence/);
+  assert.doesNotMatch(part4, /No remaining hole means ready/);
+});
+
 test('Current release versions agree across the skill, package and current report reference', async () => {
   assert.equal(JSON.parse(await read('package.json')).version, '0.7.0');
   assert.match(await read('SKILL.md'), /^# Break-it 0\.7\.0$/m);
